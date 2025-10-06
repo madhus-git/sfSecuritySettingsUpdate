@@ -1,11 +1,11 @@
 // -------------------- BUILD PARAMETERS --------------------
 properties([
     parameters([
-        string(name: 'SETTINGS_FILE_PATTERN', defaultValue: '*.settings', description: 'Pattern of Settings XML files to update (e.g., *.settings)'),
-        string(name: 'UPDATE_KEYS', defaultValue: 'enableTwoFactorAuth', description: 'Comma-separated list of XML element keys to update'),
-        string(name: 'UPDATE_VALUES', defaultValue: 'true', description: 'Comma-separated list of values for each key above'),
-        string(name: 'DEPLOY_ORG_ALIAS', defaultValue: 'projectdemosfdc', description: 'Salesforce Org Alias to deploy to'),
-        string(name: 'GIT_BRANCH', defaultValue: 'devOrg', description: 'Git branch to work on')
+        string(name: 'SETTINGS_FILE_PATTERN', defaultValue: '*.settings-meta.xml', description: 'Pattern of Settings XML files (e.g. Security.settings-meta.xml or *.settings-meta.xml)'),
+        string(name: 'UPDATE_KEYS', defaultValue: 'canUsersGrantLoginAccess,enableAdminLoginAsAnyUser', description: 'Comma-separated XML element keys to update'),
+        string(name: 'UPDATE_VALUES', defaultValue: 'true,false', description: 'Comma-separated values for each key (match order with UPDATE_KEYS)'),
+        string(name: 'DEPLOY_ORG_ALIAS', defaultValue: 'projectdemosfdc', description: 'Salesforce Org Alias for deployment'),
+        string(name: 'GIT_BRANCH', defaultValue: 'devOrg', description: 'Git branch to update and push')
     ])
 ])
 
@@ -39,7 +39,7 @@ node {
             checkout scm
         }
 
-        // -------------------- STAGE 2: BACKUP BRANCH --------------------
+        // -------------------- STAGE 2: CREATE BACKUP BRANCH --------------------
         stage('Create Backup Branch') {
             echo "Creating Git backup branch..."
             def backupBranch = "backup_${GIT_BRANCH}_${new Date().format('yyyyMMddHHmmss')}"
@@ -52,7 +52,7 @@ node {
             """)
         }
 
-        // -------------------- STAGE 3: UPDATE SETTINGS --------------------
+        // -------------------- STAGE 3: UPDATE SETTINGS (Sandbox-safe) --------------------
         stage('Update Settings XML Files') {
             script {
                 try {
@@ -68,21 +68,39 @@ node {
                     keys.eachWithIndex { k, i -> updatesMap[k.trim()] = values[i].trim() }
                     echo "Update Map: ${updatesMap}"
 
-                    def dir = new File(SETTINGS_DIR)
-                    dir.eachFileMatch(~/.*${SETTINGS_FILE_PATTERN.replace('*', '.*')}/) { file ->
-                        echo "Updating ${file.name}"
-                        def xml = new XmlParser().parse(file)
+                    def files = findFiles(glob: "${SETTINGS_DIR}/${SETTINGS_FILE_PATTERN}")
+                    if (files.length == 0) {
+                        error("No files found matching pattern ${SETTINGS_FILE_PATTERN} in ${SETTINGS_DIR}")
+                    }
+
+                    for (f in files) {
+                        def filePath = f.path
+                        echo "Processing ${filePath}"
+
+                        def content = readFile(filePath)
+                        def xml = new XmlParser().parseText(content)
+
                         updatesMap.each { key, value ->
+                            def updated = false
                             xml.depthFirst().findAll { it.name() == key }.each { node ->
-                                echo "➡ Updating ${key} in ${file.name} to ${value}"
+                                echo "➡ Updating ${key} in ${filePath} to ${value}"
                                 node.value = value
+                                updated = true
+                            }
+                            if (!updated) {
+                                echo "⚠ Warning: Key '${key}' not found in ${filePath}"
                             }
                         }
-                        def writer = new FileWriter(file)
+
+                        // Serialize XML and write safely
+                        def writer = new StringWriter()
                         def printer = new XmlNodePrinter(new PrintWriter(writer))
                         printer.setPreserveWhitespace(true)
                         printer.print(xml)
+
+                        writeFile file: filePath, text: writer.toString()
                     }
+
                 } catch (ex) {
                     error("XML Update failed: ${ex.message}")
                 }
@@ -97,7 +115,7 @@ node {
 
         // -------------------- STAGE 5: SF DRY RUN --------------------
         stage('Salesforce Dry-Run Preview') {
-            echo "Running Salesforce dry-run..."
+            echo "Running Salesforce dry-run to validate deployment..."
             runCmd("""
                 sf project deploy preview ^
                     --metadata-dir ${SETTINGS_DIR} ^
@@ -138,7 +156,7 @@ node {
             """)
         }
 
-        // -------------------- STAGE 8: VERIFY --------------------
+        // -------------------- STAGE 8: POST DEPLOY VERIFICATION --------------------
         stage('Post Deployment Verification') {
             echo "Verifying deployed settings from org: ${DEPLOY_ORG_ALIAS}"
             runCmd("""
@@ -152,19 +170,19 @@ node {
         }
 
     } catch (err) {
-        // -------------------- ROLLBACK STAGE --------------------
+        // -------------------- STAGE 9: ROLLBACK --------------------
         stage('Rollback Changes') {
             echo "Deployment failed: ${err.message}"
-            echo "Rolling back to last Git commit..."
+            echo "Rolling back local changes..."
             runCmd("""
                 git restore ${SETTINGS_DIR}
                 git checkout ${GIT_BRANCH}
                 git reset --hard origin/${GIT_BRANCH}
             """)
-            error("Rollback complete. Please review Jenkins logs for details.")
+            error("Rollback complete. Review Jenkins logs for details.")
         }
     } finally {
-        // -------------------- CLEANUP --------------------
+        // -------------------- STAGE 10: CLEANUP --------------------
         stage('Cleanup') {
             echo "Cleaning up Jenkins workspace..."
             cleanWs()
