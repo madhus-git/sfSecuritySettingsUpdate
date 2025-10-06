@@ -2,8 +2,8 @@
 def SETTINGS_FILE_PATTERN = params.SETTINGS_FILE_PATTERN ?: '*.settings'
 def UPDATE_KEYS = params.UPDATE_KEYS ?: 'enableTwoFactorAuth'
 def UPDATE_VALUES = params.UPDATE_VALUES ?: 'true'
-def DEPLOY_ORG_ALIAS = params.DEPLOY_ORG_ALIAS ?: 'DevHub'
-def GIT_BRANCH = params.GIT_BRANCH ?: 'develop'
+def DEPLOY_ORG_ALIAS = params.DEPLOY_ORG_ALIAS ?: 'projectdemosfdc'
+def GIT_BRANCH = params.GIT_BRANCH ?: 'devOrg'
 def SETTINGS_DIR = "force-app/main/default/settings"
 
 // -------------------- CROSS-PLATFORM COMMAND RUNNER --------------------
