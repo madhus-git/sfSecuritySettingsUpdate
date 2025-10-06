@@ -17,8 +17,7 @@ node {
         // 2️⃣ Checkout the code
         // ===============================
         stage('Checkout') {
-            checkout([$class: 'GitSCM', branches: [[name: params.GIT_BRANCH]],
-                      userRemoteConfigs: [[url: 'https://your-repo.git']]])
+            checkout scm
         }
 
         // ===============================
