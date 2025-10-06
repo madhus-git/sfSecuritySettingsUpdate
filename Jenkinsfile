@@ -1,13 +1,23 @@
-// -------------------- PARAMETERS --------------------
-def SETTINGS_FILE_PATTERN = params.SETTINGS_FILE_PATTERN ?: '*.settings'
-def UPDATE_KEYS = params.UPDATE_KEYS ?: 'enableTwoFactorAuth'
-def UPDATE_VALUES = params.UPDATE_VALUES ?: 'true'
-def DEPLOY_ORG_ALIAS = params.DEPLOY_ORG_ALIAS ?: 'projectdemosfdc'
-def GIT_BRANCH = params.GIT_BRANCH ?: 'devOrg'
+// -------------------- BUILD PARAMETERS --------------------
+properties([
+    parameters([
+        string(name: 'SETTINGS_FILE_PATTERN', defaultValue: '*.settings', description: 'Pattern of Settings XML files to update (e.g., *.settings)'),
+        string(name: 'UPDATE_KEYS', defaultValue: 'enableTwoFactorAuth', description: 'Comma-separated list of XML element keys to update'),
+        string(name: 'UPDATE_VALUES', defaultValue: 'true', description: 'Comma-separated list of values for each key above'),
+        string(name: 'DEPLOY_ORG_ALIAS', defaultValue: 'projectdemosfdc', description: 'Salesforce Org Alias to deploy to'),
+        string(name: 'GIT_BRANCH', defaultValue: 'devOrg', description: 'Git branch to work on')
+    ])
+])
+
+// -------------------- READ PARAMETERS --------------------
+def SETTINGS_FILE_PATTERN = params.SETTINGS_FILE_PATTERN
+def UPDATE_KEYS = params.UPDATE_KEYS
+def UPDATE_VALUES = params.UPDATE_VALUES
+def DEPLOY_ORG_ALIAS = params.DEPLOY_ORG_ALIAS
+def GIT_BRANCH = params.GIT_BRANCH
 def SETTINGS_DIR = "force-app/main/default/settings"
 
-// -------------------- CROSS-PLATFORM COMMAND RUNNER --------------------
-// define closure instead of method (works inside node)
+// -------------------- CROSS-PLATFORM RUNNER --------------------
 def runCmd = { String cmd ->
     if (isUnix()) {
         sh """#!/bin/bash
