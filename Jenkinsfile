@@ -1,7 +1,7 @@
 // -------------------- BUILD PARAMETERS --------------------
 properties([
     parameters([
-        string(name: 'SETTINGS_FILE_PATTERN', defaultValue: '*.settings-meta.xml', description: 'Pattern of Settings XML files (e.g. Security.settings-meta.xml or *.settings-meta.xml)'),
+        string(name: 'SETTINGS_FILE_PATTERN', defaultValue: 'Security.settings-meta.xml', description: 'Pattern of Settings XML files (e.g. Security.settings-meta.xml)'),
         string(name: 'UPDATE_KEYS', defaultValue: 'canUsersGrantLoginAccess,enableAdminLoginAsAnyUser', description: 'Comma-separated XML element keys to update'),
         string(name: 'UPDATE_VALUES', defaultValue: 'true,false', description: 'Comma-separated values for each key (match order with UPDATE_KEYS)'),
         string(name: 'DEPLOY_ORG_ALIAS', defaultValue: 'projectdemosfdc', description: 'Salesforce Org Alias for deployment'),
@@ -52,7 +52,7 @@ node {
             """)
         }
 
-        // -------------------- STAGE 3: UPDATE SETTINGS (Sandbox-safe) --------------------
+        // -------------------- STAGE 3: UPDATE SETTINGS (Sandbox-Safe) --------------------
         stage('Update Settings XML Files') {
             script {
                 try {
@@ -68,13 +68,26 @@ node {
                     keys.eachWithIndex { k, i -> updatesMap[k.trim()] = values[i].trim() }
                     echo "Update Map: ${updatesMap}"
 
-                    def files = findFiles(glob: "${SETTINGS_DIR}/${SETTINGS_FILE_PATTERN}")
-                    if (files.length == 0) {
+                    // ---------------- SAFE FILE LISTING ----------------
+                    def files = []
+                    def dir = new File("${WORKSPACE}/${SETTINGS_DIR}")
+                    if (!dir.exists()) {
+                        error("Settings directory not found: ${SETTINGS_DIR}")
+                    }
+                    // Match files safely
+                    dir.eachFile { file ->
+                        if (file.name == SETTINGS_FILE_PATTERN || file.name.matches(SETTINGS_FILE_PATTERN.replace("*", ".*"))) {
+                            files << file
+                        }
+                    }
+
+                    if (files.isEmpty()) {
                         error("No files found matching pattern ${SETTINGS_FILE_PATTERN} in ${SETTINGS_DIR}")
                     }
 
-                    for (f in files) {
-                        def filePath = f.path
+                    // ---------------- UPDATE EACH FILE ----------------
+                    for (file in files) {
+                        def filePath = file.getAbsolutePath()
                         echo "Processing ${filePath}"
 
                         def content = readFile(filePath)
@@ -92,12 +105,11 @@ node {
                             }
                         }
 
-                        // Serialize XML and write safely
+                        // Write XML back safely
                         def writer = new StringWriter()
                         def printer = new XmlNodePrinter(new PrintWriter(writer))
                         printer.setPreserveWhitespace(true)
                         printer.print(xml)
-
                         writeFile file: filePath, text: writer.toString()
                     }
 
@@ -129,19 +141,15 @@ node {
 
         // -------------------- STAGE 6: DEPLOY --------------------
         stage('Deploy to Salesforce Org') {
-            try {
-                echo "Deploying settings to Salesforce Org: ${DEPLOY_ORG_ALIAS}"
-                runCmd("""
-                    sf project deploy start ^
-                        --metadata-dir ${SETTINGS_DIR} ^
-                        --target-org ${DEPLOY_ORG_ALIAS} ^
-                        --ignore-conflicts ^
-                        --ignore-errors ^
-                        --verbose
-                """.stripIndent())
-            } catch (ex) {
-                error("Deployment failed: ${ex.message}")
-            }
+            echo "Deploying settings to Salesforce Org: ${DEPLOY_ORG_ALIAS}"
+            runCmd("""
+                sf project deploy start ^
+                    --metadata-dir ${SETTINGS_DIR} ^
+                    --target-org ${DEPLOY_ORG_ALIAS} ^
+                    --ignore-conflicts ^
+                    --ignore-errors ^
+                    --verbose
+            """.stripIndent())
         }
 
         // -------------------- STAGE 7: COMMIT & PUSH --------------------
@@ -170,7 +178,7 @@ node {
         }
 
     } catch (err) {
-        // -------------------- STAGE 9: ROLLBACK --------------------
+        // -------------------- ROLLBACK --------------------
         stage('Rollback Changes') {
             echo "Deployment failed: ${err.message}"
             echo "Rolling back local changes..."
@@ -182,7 +190,7 @@ node {
             error("Rollback complete. Review Jenkins logs for details.")
         }
     } finally {
-        // -------------------- STAGE 10: CLEANUP --------------------
+        // -------------------- CLEANUP --------------------
         stage('Cleanup') {
             echo "Cleaning up Jenkins workspace..."
             cleanWs()
