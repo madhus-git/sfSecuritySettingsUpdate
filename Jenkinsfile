@@ -24,7 +24,6 @@ def ORG_ALIAS_MAP = [
     'uat': 'UatOrg',
     'prod': 'ProdOrg'
 ]
-
 def DEPLOY_ORG_ALIAS = ORG_ALIAS_MAP[DEPLOY_ORG]
 
 // -------------------- CROSS-PLATFORM COMMAND EXECUTION --------------------
@@ -78,21 +77,23 @@ node {
                     keys.eachWithIndex { k, i -> updatesMap[k.trim()] = values[i].trim() }
                     echo "Update Map: ${updatesMap}"
 
-                    // -------------------- SANDBOX-SAFE FILE LIST --------------------
-                    // List all known files (hardcode or generate from parameters)
-                    def allFiles = []
-                    // Example: manually include all settings files in your repo
-                    allFiles += ["force-app/main/default/settings/Security.settings-meta.xml"]
-                    allFiles += ["force-app/main/default/settings/PasswordPolicies.settings-meta.xml"]
-                    allFiles += ["force-app/main/default/settings/SessionSettings.settings-meta.xml"]
-                    // Add more files if needed
+                    // -------------------- SANDBOX-SAFE FILE DISCOVERY --------------------
+                    def filesToUpdate = []
 
-                    // Filter files by pattern
-                    def regexPattern = SETTINGS_FILE_PATTERN.replace("*", ".*")
-                    def filesToUpdate = allFiles.findAll { it == SETTINGS_FILE_PATTERN || it.matches(regexPattern) }
+                    dir(SETTINGS_DIR) {
+                        // List all files in settings directory
+                        def fileNames = sh(script: "ls", returnStdout: true).trim().split("\n")
+                        def pattern = SETTINGS_FILE_PATTERN.replace("*", ".*") // simple regex
+
+                        for (f in fileNames) {
+                            if (f == SETTINGS_FILE_PATTERN || f.matches(pattern)) {
+                                filesToUpdate << "${SETTINGS_DIR}/${f}"
+                            }
+                        }
+                    }
 
                     if (filesToUpdate.isEmpty()) {
-                        error("No files found matching pattern ${SETTINGS_FILE_PATTERN}")
+                        error("No files found matching pattern ${SETTINGS_FILE_PATTERN} in ${SETTINGS_DIR}")
                     }
 
                     // -------------------- UPDATE EACH FILE --------------------
@@ -113,7 +114,6 @@ node {
                             }
                         }
 
-                        // Serialize XML and write back safely
                         def writer = new StringWriter()
                         def printer = new XmlNodePrinter(new PrintWriter(writer))
                         printer.setPreserveWhitespace(true)
