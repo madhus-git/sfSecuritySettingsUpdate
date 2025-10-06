@@ -1,10 +1,10 @@
 // -------------------- BUILD PARAMETERS --------------------
 properties([
     parameters([
-        string(name: 'SETTINGS_FILE_PATTERN', defaultValue: 'Security.settings-meta.xml', description: 'Pattern of Settings XML files (e.g. Security.settings-meta.xml)'),
+        string(name: 'SETTINGS_FILE_PATTERN', defaultValue: '*.settings-meta.xml', description: 'Pattern of Settings XML files (e.g. Security.settings-meta.xml or *.settings-meta.xml)'),
         string(name: 'UPDATE_KEYS', defaultValue: 'canUsersGrantLoginAccess,enableAdminLoginAsAnyUser', description: 'Comma-separated XML element keys to update'),
         string(name: 'UPDATE_VALUES', defaultValue: 'true,false', description: 'Comma-separated values for each key (match order with UPDATE_KEYS)'),
-        string(name: 'DEPLOY_ORG_ALIAS', defaultValue: 'projectdemosfdc', description: 'Salesforce Org Alias for deployment'),
+        choice(name: 'DEPLOY_ORG', choices: ['dev', 'sit', 'uat', 'prod'], description: 'Salesforce Org environment to deploy'),
         string(name: 'GIT_BRANCH', defaultValue: 'devOrg', description: 'Git branch to update and push')
     ])
 ])
@@ -13,11 +13,21 @@ properties([
 def SETTINGS_FILE_PATTERN = params.SETTINGS_FILE_PATTERN
 def UPDATE_KEYS = params.UPDATE_KEYS
 def UPDATE_VALUES = params.UPDATE_VALUES
-def DEPLOY_ORG_ALIAS = params.DEPLOY_ORG_ALIAS
+def DEPLOY_ORG = params.DEPLOY_ORG
 def GIT_BRANCH = params.GIT_BRANCH
 def SETTINGS_DIR = "force-app/main/default/settings"
 
-// -------------------- CROSS-PLATFORM RUNNER --------------------
+// Map Org name to Salesforce CLI alias
+def ORG_ALIAS_MAP = [
+    'dev': 'DevOrg',
+    'sit': 'SitOrg',
+    'uat': 'UatOrg',
+    'prod': 'ProdOrg'
+]
+
+def DEPLOY_ORG_ALIAS = ORG_ALIAS_MAP[DEPLOY_ORG]
+
+// -------------------- CROSS-PLATFORM COMMAND EXECUTION --------------------
 def runCmd = { String cmd ->
     if (isUnix()) {
         sh """#!/bin/bash
@@ -52,65 +62,63 @@ node {
             """)
         }
 
-        // -------------------- STAGE 3: UPDATE SETTINGS (Sandbox-Safe) --------------------
+        // -------------------- STAGE 3: UPDATE SETTINGS XML FILES (SANDBOX-SAFE) --------------------
         stage('Update Settings XML Files') {
             script {
                 try {
                     echo "Updating XML files in ${SETTINGS_DIR} with pattern: ${SETTINGS_FILE_PATTERN}"
 
+                    // Prepare key-value map
                     def keys = UPDATE_KEYS.split(',')
                     def values = UPDATE_VALUES.split(',')
                     if (keys.size() != values.size()) {
                         error("Keys and values count mismatch. Ensure both lists have equal items.")
                     }
-
                     def updatesMap = [:]
                     keys.eachWithIndex { k, i -> updatesMap[k.trim()] = values[i].trim() }
                     echo "Update Map: ${updatesMap}"
 
-                    // ---------------- SAFE FILE LISTING ----------------
-                    def files = []
-                    def dir = new File("${WORKSPACE}/${SETTINGS_DIR}")
-                    if (!dir.exists()) {
-                        error("Settings directory not found: ${SETTINGS_DIR}")
-                    }
-                    // Match files safely
-                    dir.eachFile { file ->
-                        if (file.name == SETTINGS_FILE_PATTERN || file.name.matches(SETTINGS_FILE_PATTERN.replace("*", ".*"))) {
-                            files << file
-                        }
+                    // -------------------- SANDBOX-SAFE FILE LIST --------------------
+                    // List all known files (hardcode or generate from parameters)
+                    def allFiles = []
+                    // Example: manually include all settings files in your repo
+                    allFiles += ["force-app/main/default/settings/Security.settings-meta.xml"]
+                    allFiles += ["force-app/main/default/settings/PasswordPolicies.settings-meta.xml"]
+                    allFiles += ["force-app/main/default/settings/SessionSettings.settings-meta.xml"]
+                    // Add more files if needed
+
+                    // Filter files by pattern
+                    def regexPattern = SETTINGS_FILE_PATTERN.replace("*", ".*")
+                    def filesToUpdate = allFiles.findAll { it == SETTINGS_FILE_PATTERN || it.matches(regexPattern) }
+
+                    if (filesToUpdate.isEmpty()) {
+                        error("No files found matching pattern ${SETTINGS_FILE_PATTERN}")
                     }
 
-                    if (files.isEmpty()) {
-                        error("No files found matching pattern ${SETTINGS_FILE_PATTERN} in ${SETTINGS_DIR}")
-                    }
-
-                    // ---------------- UPDATE EACH FILE ----------------
-                    for (file in files) {
-                        def filePath = file.getAbsolutePath()
-                        echo "Processing ${filePath}"
-
-                        def content = readFile(filePath)
+                    // -------------------- UPDATE EACH FILE --------------------
+                    for (f in filesToUpdate) {
+                        echo "Processing ${f}"
+                        def content = readFile(f)
                         def xml = new XmlParser().parseText(content)
 
                         updatesMap.each { key, value ->
                             def updated = false
                             xml.depthFirst().findAll { it.name() == key }.each { node ->
-                                echo "➡ Updating ${key} in ${filePath} to ${value}"
+                                echo "➡ Updating ${key} in ${f} to ${value}"
                                 node.value = value
                                 updated = true
                             }
                             if (!updated) {
-                                echo "⚠ Warning: Key '${key}' not found in ${filePath}"
+                                echo "⚠ Warning: Key '${key}' not found in ${f}"
                             }
                         }
 
-                        // Write XML back safely
+                        // Serialize XML and write back safely
                         def writer = new StringWriter()
                         def printer = new XmlNodePrinter(new PrintWriter(writer))
                         printer.setPreserveWhitespace(true)
                         printer.print(xml)
-                        writeFile file: filePath, text: writer.toString()
+                        writeFile file: f, text: writer.toString()
                     }
 
                 } catch (ex) {
@@ -125,7 +133,7 @@ node {
             runCmd("git diff ${SETTINGS_DIR} || exit 0")
         }
 
-        // -------------------- STAGE 5: SF DRY RUN --------------------
+        // -------------------- STAGE 5: SF DRY-RUN PREVIEW --------------------
         stage('Salesforce Dry-Run Preview') {
             echo "Running Salesforce dry-run to validate deployment..."
             runCmd("""
@@ -164,7 +172,7 @@ node {
             """)
         }
 
-        // -------------------- STAGE 8: POST DEPLOY VERIFICATION --------------------
+        // -------------------- STAGE 8: POST-DEPLOY VERIFICATION --------------------
         stage('Post Deployment Verification') {
             echo "Verifying deployed settings from org: ${DEPLOY_ORG_ALIAS}"
             runCmd("""
