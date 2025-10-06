@@ -1,207 +1,143 @@
-// -------------------- BUILD PARAMETERS --------------------
-properties([
-    parameters([
-        string(name: 'SETTINGS_FILE_PATTERN', defaultValue: '*.settings-meta.xml', description: 'Pattern of Settings XML files (e.g. Security.settings-meta.xml or *.settings-meta.xml)'),
-        string(name: 'UPDATE_KEYS', defaultValue: 'canUsersGrantLoginAccess,enableAdminLoginAsAnyUser', description: 'Comma-separated XML element keys to update'),
-        string(name: 'UPDATE_VALUES', defaultValue: 'true,false', description: 'Comma-separated values for each key (match order with UPDATE_KEYS)'),
-        choice(name: 'DEPLOY_ORG', choices: ['dev', 'sit', 'uat', 'prod'], description: 'Salesforce Org environment to deploy'),
-        string(name: 'GIT_BRANCH', defaultValue: 'devOrg', description: 'Git branch to update and push')
-    ])
-])
-
-// -------------------- READ PARAMETERS --------------------
-def SETTINGS_FILE_PATTERN = params.SETTINGS_FILE_PATTERN
-def UPDATE_KEYS = params.UPDATE_KEYS
-def UPDATE_VALUES = params.UPDATE_VALUES
-def DEPLOY_ORG = params.DEPLOY_ORG
-def GIT_BRANCH = params.GIT_BRANCH
-def SETTINGS_DIR = "force-app/main/default/settings"
-
-// Map Org name to Salesforce CLI alias
-def ORG_ALIAS_MAP = [
-    'dev': 'DevOrg',
-    'sit': 'SitOrg',
-    'uat': 'UatOrg',
-    'prod': 'ProdOrg'
-]
-def DEPLOY_ORG_ALIAS = ORG_ALIAS_MAP[DEPLOY_ORG]
-
-// -------------------- CROSS-PLATFORM COMMAND EXECUTION --------------------
-def runCmd = { String cmd ->
-    if (isUnix()) {
-        sh """#!/bin/bash
-        set +e
-        ${cmd}
-        """
-    } else {
-        bat """@echo off
-        ${cmd}
-        """
-    }
-}
-
 node {
     try {
-        // -------------------- STAGE 1: CHECKOUT --------------------
-        stage('Checkout SCM') {
-            echo "Checking out repository..."
-            checkout scm
+        // ===============================
+        // 1️⃣ Define build parameters
+        // ===============================
+        properties([
+            parameters([
+                string(name: 'SETTINGS_FILE_PATTERN', defaultValue: 'Security.settings-meta.xml', description: 'Settings XML file pattern'),
+                string(name: 'UPDATE_KEYS', defaultValue: 'canUsersGrantLoginAccess,enableAdminLoginAsAnyUser', description: 'Comma-separated XML nodes to update'),
+                string(name: 'UPDATE_VALUES', defaultValue: 'true,false', description: 'Comma-separated values for the nodes'),
+                string(name: 'DEPLOY_ORG_ALIAS', defaultValue: 'devOrg', description: 'Salesforce org alias to deploy to'),
+                string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Git branch to commit updates')
+            ])
+        ])
+
+        // ===============================
+        // 2️⃣ Checkout the code
+        // ===============================
+        stage('Checkout') {
+            checkout([$class: 'GitSCM', branches: [[name: params.GIT_BRANCH]],
+                      userRemoteConfigs: [[url: 'https://your-repo.git']]])
         }
 
-        // -------------------- STAGE 2: CREATE BACKUP BRANCH --------------------
-        stage('Create Backup Branch') {
-            echo "Creating Git backup branch..."
-            def backupBranch = "backup_${GIT_BRANCH}_${new Date().format('yyyyMMddHHmmss')}"
-            runCmd("""
-                git fetch origin
-                git checkout ${GIT_BRANCH}
-                git pull origin ${GIT_BRANCH}
-                git checkout -b ${backupBranch}
-                echo Created backup branch: ${backupBranch}
-            """)
+        // ===============================
+        // 3️⃣ Backup original files (for rollback)
+        // ===============================
+        stage('Backup Original XMLs') {
+            def xmlFiles = findFiles(glob: "force-app/main/default/settings/${params.SETTINGS_FILE_PATTERN}")
+            if (xmlFiles.length == 0) error "No files found for pattern: ${params.SETTINGS_FILE_PATTERN}"
+
+            xmlFiles.each { f ->
+                def origFile = new File(f.path)
+                def backupFile = new File(f.path + ".bak")
+                backupFile.text = origFile.text
+                println "Backup created for: ${f.path}"
+            }
         }
 
-        // -------------------- STAGE 3: UPDATE SETTINGS XML FILES (SANDBOX-SAFE) --------------------
-        stage('Update Settings XML Files') {
-            script {
-                try {
-                    echo "Updating XML files in ${SETTINGS_DIR} with pattern: ${SETTINGS_FILE_PATTERN}"
+        // ===============================
+        // 4️⃣ Update XML Files
+        // ===============================
+        stage('Update XML') {
+            def xmlFiles = findFiles(glob: "force-app/main/default/settings/${params.SETTINGS_FILE_PATTERN}")
+            
+            def keys = params.UPDATE_KEYS.split(',')
+            def values = params.UPDATE_VALUES.split(',')
+            if (keys.size() != values.size()) error "UPDATE_KEYS and UPDATE_VALUES must have same number of items"
 
-                    // Prepare key-value map
-                    def keys = UPDATE_KEYS.split(',')
-                    def values = UPDATE_VALUES.split(',')
-                    if (keys.size() != values.size()) {
-                        error("Keys and values count mismatch. Ensure both lists have equal items.")
+            def updateMap = [:]
+            keys.eachWithIndex { k, i -> updateMap[k] = values[i] }
+
+            // Update each XML file
+            xmlFiles.each { f ->
+                println "Updating XML file: ${f.path}"
+                def file = new File(f.path)
+                def xml = new XmlParser().parse(file)
+
+                // Track updated nodes for validation
+                def updatedNodes = [:]
+
+                updateMap.each { k, v ->
+                    def node = xml."${k}"
+                    if (node) {
+                        node[0].value = v
+                        updatedNodes[k] = node[0].value
+                        println "Updated ${k} -> ${v}"
+                    } else {
+                        xml.appendNode(k, v)
+                        updatedNodes[k] = v
+                        println "Added node ${k} -> ${v}"
                     }
-                    def updatesMap = [:]
-                    keys.eachWithIndex { k, i -> updatesMap[k.trim()] = values[i].trim() }
-                    echo "Update Map: ${updatesMap}"
+                }
 
-                    // -------------------- SANDBOX-SAFE FILE DISCOVERY --------------------
-                    def filesToUpdate = []
+                // Write back XML
+                def writer = new FileWriter(file)
+                def printer = new XmlNodePrinter(new PrintWriter(writer))
+                printer.setPreserveWhitespace(true)
+                printer.print(xml)
+                writer.close()
 
-                    dir(SETTINGS_DIR) {
-                        // List all files in settings directory
-                        def fileNames = sh(script: "ls", returnStdout: true).trim().split("\n")
-                        def pattern = SETTINGS_FILE_PATTERN.replace("*", ".*") // simple regex
+                // Validation
+                def xmlAfter = new XmlParser().parse(file)
+                keys.each { k ->
+                    def nodeValue = xmlAfter."${k}" ? xmlAfter."${k}"[0].text() : null
+                    if (nodeValue != updateMap[k]) error "Validation failed for ${k} in file ${f.path}. Expected: ${updateMap[k]}, Found: ${nodeValue}"
+                }
+                println "Validation passed for file: ${f.path}"
+            }
+        }
 
-                        for (f in fileNames) {
-                            if (f == SETTINGS_FILE_PATTERN || f.matches(pattern)) {
-                                filesToUpdate << "${SETTINGS_DIR}/${f}"
-                            }
-                        }
-                    }
+        // ===============================
+        // 5️⃣ Deploy to Salesforce Org using SF CLI
+        // ===============================
+        stage('Deploy to Org') {
+            def xmlFiles = findFiles(glob: "force-app/main/default/settings/${params.SETTINGS_FILE_PATTERN}")
+            def filesToDeploy = xmlFiles.collect { it.path }.join(' ')
+            if (!filesToDeploy) error "No files found to deploy"
 
-                    if (filesToUpdate.isEmpty()) {
-                        error("No files found matching pattern ${SETTINGS_FILE_PATTERN} in ${SETTINGS_DIR}")
-                    }
+            echo "Deploying files to org: ${params.DEPLOY_ORG_ALIAS}"
+            def deployResult = bat(script: "sfdx force:source:deploy -p ${filesToDeploy} -u ${params.DEPLOY_ORG_ALIAS} --wait 10 --testlevel NoTestRun", returnStatus: true)
 
-                    // -------------------- UPDATE EACH FILE --------------------
-                    for (f in filesToUpdate) {
-                        echo "Processing ${f}"
-                        def content = readFile(f)
-                        def xml = new XmlParser().parseText(content)
+            if (deployResult != 0) {
+                error "Deployment failed! Rolling back XML changes..."
+            }
+            echo "Deployment succeeded!"
+        }
 
-                        updatesMap.each { key, value ->
-                            def updated = false
-                            xml.depthFirst().findAll { it.name() == key }.each { node ->
-                                echo "➡ Updating ${key} in ${f} to ${value}"
-                                node.value = value
-                                updated = true
-                            }
-                            if (!updated) {
-                                echo "⚠ Warning: Key '${key}' not found in ${f}"
-                            }
-                        }
+        // ===============================
+        // 6️⃣ Commit updates to Git
+        // ===============================
+        stage('Commit Updates') {
+            bat """
+                git config user.email "jenkins@yourdomain.com"
+                git config user.name "Jenkins"
+                git checkout ${params.GIT_BRANCH}
+                git add force-app/main/default/settings/${params.SETTINGS_FILE_PATTERN}
+                git commit -m "Updated settings XML via Jenkins build"
+                git push origin ${params.GIT_BRANCH}
+            """
+        }
 
-                        def writer = new StringWriter()
-                        def printer = new XmlNodePrinter(new PrintWriter(writer))
-                        printer.setPreserveWhitespace(true)
-                        printer.print(xml)
-                        writeFile file: f, text: writer.toString()
-                    }
+        echo "Pipeline completed successfully!"
 
-                } catch (ex) {
-                    error("XML Update failed: ${ex.message}")
+    } catch (err) {
+        // ===============================
+        // 7️⃣ Rollback changes if deployment fails
+        // ===============================
+        stage('Rollback Changes') {
+            echo "Rolling back XML changes..."
+            def xmlFiles = findFiles(glob: "force-app/main/default/settings/${params.SETTINGS_FILE_PATTERN}")
+            xmlFiles.each { f ->
+                def backupFile = new File(f.path + ".bak")
+                if (backupFile.exists()) {
+                    new File(f.path).text = backupFile.text
+                    println "Restored backup for: ${f.path}"
                 }
             }
         }
 
-        // -------------------- STAGE 4: VALIDATE LOCAL CHANGES --------------------
-        stage('Validate Local Changes') {
-            echo "Showing XML changes before deploy..."
-            runCmd("git diff ${SETTINGS_DIR} || exit 0")
-        }
-
-        // -------------------- STAGE 5: SF DRY-RUN PREVIEW --------------------
-        stage('Salesforce Dry-Run Preview') {
-            echo "Running Salesforce dry-run to validate deployment..."
-            runCmd("""
-                sf project deploy preview ^
-                    --metadata-dir ${SETTINGS_DIR} ^
-                    --target-org ${DEPLOY_ORG_ALIAS} ^
-                    --ignore-conflicts ^
-                    --ignore-errors ^
-                    --verbose
-            """.stripIndent())
-            input message: "Dry-run complete. Proceed with actual deployment to ${DEPLOY_ORG_ALIAS}?"
-        }
-
-        // -------------------- STAGE 6: DEPLOY --------------------
-        stage('Deploy to Salesforce Org') {
-            echo "Deploying settings to Salesforce Org: ${DEPLOY_ORG_ALIAS}"
-            runCmd("""
-                sf project deploy start ^
-                    --metadata-dir ${SETTINGS_DIR} ^
-                    --target-org ${DEPLOY_ORG_ALIAS} ^
-                    --ignore-conflicts ^
-                    --ignore-errors ^
-                    --verbose
-            """.stripIndent())
-        }
-
-        // -------------------- STAGE 7: COMMIT & PUSH --------------------
-        stage('Commit and Push to Git') {
-            echo "Committing updated settings to branch ${GIT_BRANCH}..."
-            runCmd("""
-                git checkout ${GIT_BRANCH}
-                git pull origin ${GIT_BRANCH}
-                git add ${SETTINGS_DIR}
-                git commit -m "Auto-update: Settings XML updated & deployed to ${DEPLOY_ORG_ALIAS} via Jenkins" || echo "No changes to commit."
-                git push origin ${GIT_BRANCH}
-            """)
-        }
-
-        // -------------------- STAGE 8: POST-DEPLOY VERIFICATION --------------------
-        stage('Post Deployment Verification') {
-            echo "Verifying deployed settings from org: ${DEPLOY_ORG_ALIAS}"
-            runCmd("""
-                sf project retrieve start ^
-                    --metadata-dir ${SETTINGS_DIR} ^
-                    --target-org ${DEPLOY_ORG_ALIAS} ^
-                    --ignore-errors ^
-                    --verbose
-            """)
-            echo "Verification successful."
-        }
-
-    } catch (err) {
-        // -------------------- ROLLBACK --------------------
-        stage('Rollback Changes') {
-            echo "Deployment failed: ${err.message}"
-            echo "Rolling back local changes..."
-            runCmd("""
-                git restore ${SETTINGS_DIR}
-                git checkout ${GIT_BRANCH}
-                git reset --hard origin/${GIT_BRANCH}
-            """)
-            error("Rollback complete. Review Jenkins logs for details.")
-        }
-    } finally {
-        // -------------------- CLEANUP --------------------
-        stage('Cleanup') {
-            echo "Cleaning up Jenkins workspace..."
-            cleanWs()
-        }
+        currentBuild.result = 'FAILURE'
+        throw err
     }
 }
