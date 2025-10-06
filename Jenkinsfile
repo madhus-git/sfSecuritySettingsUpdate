@@ -1,29 +1,30 @@
-node {
-    // -------------------- PARAMETERS --------------------
-    def SETTINGS_FILE_PATTERN = params.SETTINGS_FILE_PATTERN ?: '*.settings'
-    def UPDATE_KEYS = params.UPDATE_KEYS ?: 'enableTwoFactorAuth'
-    def UPDATE_VALUES = params.UPDATE_VALUES ?: 'true'
-    def DEPLOY_ORG_ALIAS = params.DEPLOY_ORG_ALIAS ?: 'DevHub'
-    def GIT_BRANCH = params.GIT_BRANCH ?: 'devOrg'
-    def SETTINGS_DIR = "force-app/main/default/settings"
+// -------------------- PARAMETERS --------------------
+def SETTINGS_FILE_PATTERN = params.SETTINGS_FILE_PATTERN ?: '*.settings'
+def UPDATE_KEYS = params.UPDATE_KEYS ?: 'enableTwoFactorAuth'
+def UPDATE_VALUES = params.UPDATE_VALUES ?: 'true'
+def DEPLOY_ORG_ALIAS = params.DEPLOY_ORG_ALIAS ?: 'DevHub'
+def GIT_BRANCH = params.GIT_BRANCH ?: 'develop'
+def SETTINGS_DIR = "force-app/main/default/settings"
 
-    // -------------------- FUNCTIONS --------------------
-    def runCmd(String cmd) {
-        if (isUnix()) {
-            sh """#!/bin/bash
-            set +e
-            ${cmd}
-            """
-        } else {
-            bat """@echo off
-            ${cmd}
-            """
-        }
+// -------------------- CROSS-PLATFORM COMMAND RUNNER --------------------
+// define closure instead of method (works inside node)
+def runCmd = { String cmd ->
+    if (isUnix()) {
+        sh """#!/bin/bash
+        set +e
+        ${cmd}
+        """
+    } else {
+        bat """@echo off
+        ${cmd}
+        """
     }
+}
 
+node {
     try {
         // -------------------- STAGE 1: CHECKOUT --------------------
-        stage('Checkout') {
+        stage('Checkout SCM') {
             echo "Checking out repository..."
             checkout scm
         }
@@ -85,7 +86,7 @@ node {
         }
 
         // -------------------- STAGE 5: SF DRY RUN --------------------
-        stage('Dry-Run Preview') {
+        stage('Salesforce Dry-Run Preview') {
             echo "Running Salesforce dry-run..."
             runCmd("""
                 sf project deploy preview ^
@@ -99,7 +100,7 @@ node {
         }
 
         // -------------------- STAGE 6: DEPLOY --------------------
-        stage('Deploy to Org') {
+        stage('Deploy to Salesforce Org') {
             try {
                 echo "Deploying settings to Salesforce Org: ${DEPLOY_ORG_ALIAS}"
                 runCmd("""
@@ -157,16 +158,6 @@ node {
         stage('Cleanup') {
             echo "Cleaning up Jenkins workspace..."
             cleanWs()
-        }
-    }
-
-    // -------------------- POST STATUS --------------------
-    post {
-        success {
-            echo "Pipeline completed successfully."
-        }
-        failure {
-            echo "Pipeline failed — rollback executed if needed."
         }
     }
 }
