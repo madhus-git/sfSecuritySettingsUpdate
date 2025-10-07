@@ -7,7 +7,7 @@ node {
     def XML_PATH = params.XMLFilePath ?: ''
     def TAG_NAME = params.TagName ?: ''
     def TAG_VALUE = params.TagValue ?: ''
-    def GIT_BRANCH = params.BranchName ?: 'main'
+    def GIT_BRANCH = params.BranchName ?: 'devOrg'
     def BACKUP_DIR = "backup_${env.BUILD_ID}"
 
     try {
