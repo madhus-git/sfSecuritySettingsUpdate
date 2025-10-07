@@ -1,3 +1,5 @@
+@Library('pipeline-utility-steps') _
+
 node {
     // -------------------------------
     // 0️⃣ Checkout repository
@@ -8,7 +10,7 @@ node {
     }
 
     // -------------------------------
-    // 1️⃣ Parameters (passed at build)
+    // 1️⃣ Parameters
     // -------------------------------
     def orgAlias = params.ORG_ALIAS
     def xmlFilesInput = params.XML_FILES        // Comma-separated XML files
@@ -24,7 +26,6 @@ node {
     def waitTime = 30
     def testLevel = "RunLocalTests"
     def timestamp = new Date().format('yyyyMMdd_HHmmss')
-    def backupFiles = [:]  // Track backups for rollback
 
     // -------------------------------
     // Helper Functions
@@ -47,6 +48,9 @@ node {
             bat "copy /Y \"${src}\" \"${dest}\""
         }
     }
+
+    // Track backup file paths (store as JSON string for CPS safety)
+    def backupFilesJson = "{}"
 
     try {
         // -------------------------------
@@ -85,15 +89,16 @@ node {
         // -------------------------------
         stage('Backup XML') {
             echo "[STEP] Backing up XML files..."
+            def backupFilesMap = [:]
             xmlFilesInput.split(",").each { file ->
                 file = file.trim()
                 def backupFile = "${file}.bak_${timestamp}"
-                backupFiles[file] = backupFile
-
+                backupFilesMap[file] = backupFile
                 copyFile(file, backupFile)
                 echo "Backup created: ${backupFile}"
             }
-            env.BACKUP_FILES = groovy.json.JsonOutput.toJson(backupFiles)
+            backupFilesJson = groovy.json.JsonOutput.toJson(backupFilesMap)
+            env.BACKUP_FILES = backupFilesJson
         }
 
         // -------------------------------
@@ -157,13 +162,15 @@ node {
             echo "[STEP] Deploying to org: ${orgAlias}"
             def deployLog = "${logDir}/deploy_${timestamp}.json"
 
-            def exitCode = isUnix() ? sh(script: "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}", returnStatus: true)
-                                      : bat(script: "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}", returnStatus: true)
+            // Use returnStatus to prevent CPS thread errors
+            def exitCode = isUnix() ?
+                sh(script: "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}", returnStatus: true)
+                :
+                bat(script: "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}", returnStatus: true)
 
             if(exitCode != 0) {
                 error "[FAILURE] Salesforce deployment failed. Check ${deployLog}"
             }
-
             echo "Deployment completed. Log: ${deployLog}"
         }
 
@@ -198,16 +205,17 @@ node {
         // Rollback on failure
         // -------------------------------
         echo "[FAILURE] ${err}"
-        if(env.BACKUP_FILES) {
+        stage('Rollback') {
             echo "[ROLLBACK] Restoring backups..."
-            def backupFilesJson = env.BACKUP_FILES
-            backupFiles = new groovy.json.JsonSlurper().parseText(backupFilesJson)
-            backupFiles.each { orig, backup ->
-                copyFile(backup, orig)
-                echo "Restored ${orig} from ${backup}"
+            if(env.BACKUP_FILES) {
+                def backups = readJSON text: env.BACKUP_FILES
+                backups.each { orig, backup ->
+                    copyFile(backup, orig)
+                    echo "Restored ${orig} from ${backup}"
+                }
+            } else {
+                echo "[ROLLBACK] No backups to restore"
             }
-        } else {
-            echo "[ROLLBACK] No backups to restore"
         }
         error "Pipeline failed and rollback completed"
     }
