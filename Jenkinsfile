@@ -25,7 +25,7 @@ node {
             echo "🛠 Updating XML files under force-app/main/default/settings..."
 
             def xmlDir = "force-app/main/default/settings"
-            def isWindows = (isUnix() == false)
+            def isWindows = !isUnix()
 
             // Convert key=value text to map
             def updateMap = [:]
@@ -39,11 +39,15 @@ node {
             // Get all .xml files
             def files = []
             if (isWindows) {
-                def filesOutput = bat(script: "powershell -Command \"Get-ChildItem -Path '${xmlDir}' -Filter *.xml | ForEach-Object { `$_.FullName }\"", returnStdout: true).trim()
-                files = filesOutput.split("\\r?\\n")
+                files = bat(
+                    script: 'powershell -Command "Get-ChildItem -Path \'' + xmlDir + '\' -Filter *.xml | ForEach-Object { $_.FullName }"',
+                    returnStdout: true
+                ).trim().split("\\r?\\n")
             } else {
-                def filesOutput = sh(script: "find ${xmlDir} -type f -name '*.xml'", returnStdout: true).trim()
-                files = filesOutput.split("\\r?\\n")
+                files = sh(
+                    script: "find ${xmlDir} -type f -name '*.xml'",
+                    returnStdout: true
+                ).trim().split("\\r?\\n")
             }
 
             // Update each XML file
@@ -73,16 +77,20 @@ node {
         stage('Validate Updates') {
             echo "🔍 Validating XML updates..."
             def xmlDir = "force-app/main/default/settings"
-            def isWindows = (isUnix() == false)
+            def isWindows = !isUnix()
             def failed = false
 
             def files = []
             if (isWindows) {
-                def filesOutput = bat(script: "powershell -Command \"Get-ChildItem -Path '${xmlDir}' -Filter *.xml | ForEach-Object { `$_.FullName }\"", returnStdout: true).trim()
-                files = filesOutput.split("\\r?\\n")
+                files = bat(
+                    script: 'powershell -Command "Get-ChildItem -Path \'' + xmlDir + '\' -Filter *.xml | ForEach-Object { $_.FullName }"',
+                    returnStdout: true
+                ).trim().split("\\r?\\n")
             } else {
-                def filesOutput = sh(script: "find ${xmlDir} -type f -name '*.xml'", returnStdout: true).trim()
-                files = filesOutput.split("\\r?\\n")
+                files = sh(
+                    script: "find ${xmlDir} -type f -name '*.xml'",
+                    returnStdout: true
+                ).trim().split("\\r?\\n")
             }
 
             files.each { filePath ->
@@ -108,19 +116,19 @@ node {
         // ==================================================
         stage('Commit to Git') {
             echo "💾 Committing changes to Git..."
-            if (isUnix()) {
-                sh '''
-                    git config user.email "jenkins@local"
-                    git config user.name "Jenkins"
-                    git add force-app/main/default/settings/*.xml
-                    git commit -m "Automated XML update via Jenkins pipeline" || echo "⚠️ No changes to commit"
-                    git push origin HEAD:main || echo "⚠️ Push skipped"
-                '''
-            } else {
+            if (isWindows) {
                 bat '''
                     git config user.email "jenkins@local"
                     git config user.name "Jenkins"
                     git add force-app\\main\\default\\settings\\*.xml
+                    git commit -m "Automated XML update via Jenkins pipeline" || echo "⚠️ No changes to commit"
+                    git push origin HEAD:main || echo "⚠️ Push skipped"
+                '''
+            } else {
+                sh '''
+                    git config user.email "jenkins@local"
+                    git config user.name "Jenkins"
+                    git add force-app/main/default/settings/*.xml
                     git commit -m "Automated XML update via Jenkins pipeline" || echo "⚠️ No changes to commit"
                     git push origin HEAD:main || echo "⚠️ Push skipped"
                 '''
@@ -132,16 +140,13 @@ node {
         // ==================================================
         /*stage('Deploy to Org') {
             echo "🚀 Deploying to Salesforce Org: ${params.ORG_ALIAS}"
-            if (isUnix()) {
-                sh "sf project deploy start --source-dir force-app --target-org ${params.ORG_ALIAS} --ignore-warnings --verbose"
-            } else {
+            if (isWindows) {
                 bat "sf project deploy start --source-dir force-app --target-org ${params.ORG_ALIAS} --ignore-warnings --verbose"
+            } else {
+                sh "sf project deploy start --source-dir force-app --target-org ${params.ORG_ALIAS} --ignore-warnings --verbose"
             }
         }*/
 
-        // ==================================================
-        // ✅ Success
-        // ==================================================
         echo "🎉 Pipeline completed successfully for org: ${params.ORG_ALIAS}"
 
     } catch (err) {
