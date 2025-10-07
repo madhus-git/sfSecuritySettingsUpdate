@@ -1,185 +1,168 @@
-node {
-    // -------------------------------
-    // 0️⃣ Parameters (passed at build time)
-    // -------------------------------
-    def orgAlias = params.ORG_ALIAS
-    def xmlFilesInput = params.XML_FILES        // Comma-separated paths
-    def tagsInput = params.TAGS_MAP             // Format: filePath:tag1=value1,tag2=value2 per line
-
-    if (!orgAlias || !xmlFilesInput || !tagsInput) {
-        error "Please provide ORG_ALIAS, XML_FILES, and TAGS_MAP as build parameters"
+pipeline {
+    agent any
+    parameters {
+        string(name: 'ORG_ALIAS', defaultValue: 'devOrg', description: 'Salesforce org alias for deployment')
+        string(name: 'XML_FILES', defaultValue: 'force-app/main/default/settings/Security.settings-meta.xml', description: 'Comma-separated XML files to update')
+        text(name: 'TAGS_MAP', defaultValue: 'force-app/main/default/settings/Security.settings-meta.xml:canUsersGrantLoginAccess=false,enableAdminLoginAsAnyUser=true', description: 'Format: filePath:tag1=value1,tag2=value2 per line')
     }
 
-    def logDir = "deployment_logs"
-    def backupDir = "backups"
-    def packageXml = "./manifest/package.xml"
-    def waitTime = 30
-    def testLevel = "RunLocalTests"
-    def timestamp = new Date().format('yyyyMMdd_HHmmss')
-    def backupFiles = [:] // Map to track backups for rollback
-
-    // -------------------------------
-    // Helper Functions
-    // -------------------------------
-    def parseTags = { tagsStr ->
-        def map = [:]
-        tagsStr.split(",").each { kv ->
-            def pair = kv.trim().split("=")
-            if(pair.size() == 2) { map[pair[0]] = pair[1] }
-        }
-        return map
-    }
-
-    def runCommand = { cmdUnix, cmdWin ->
-        if (isUnix()) {
-            sh cmdUnix
-        } else {
-            bat cmdWin
-        }
-    }
-
-    // -------------------------------
-    // 1️⃣ Prepare directories
-    // -------------------------------
-    stage('Prepare') {
-        echo "[STEP] Creating log and backup directories..."
-        runCommand("mkdir -p ${logDir} ${backupDir}", """
-            if not exist "${logDir}" mkdir "${logDir}"
-            if not exist "${backupDir}" mkdir "${backupDir}"
-        """)
-    }
-
-    // -------------------------------
-    // 2️⃣ Backup XML files
-    // -------------------------------
-    stage('Backup XML') {
-        echo "[STEP] Backing up XML files..."
-        xmlFilesInput.split(",").each { file ->
-            file = file.trim()
-            def backupFile = "${file}.bak_${timestamp}"
-            backupFiles[file] = backupFile
-
-            // Validate file exists
-            runCommand(
-                "test -f ${file} || (echo File not found: ${file} && exit 1)",
-                "if not exist \"${file}\" (echo File not found: ${file} & exit 1)"
-            )
-
-            // Copy backup
-            runCommand(
-                "cp ${file} ${backupFile}",
-                "copy /Y \"${file}\" \"${backupFile}\""
-            )
-
-            echo "Backup created: ${backupFile}"
-        }
-    }
-
-    // -------------------------------
-    // 3️⃣ Update XML files
-    // -------------------------------
-    stage('Update XML') {
-        echo "[STEP] Updating XML files..."
-        tagsInput.split("\n").each { line ->
-            if(line.trim()) {
-                def parts = line.split(":")
-                if(parts.size() != 2) { error "Invalid format in TAGS_MAP: ${line}" }
-                def xmlFile = parts[0].trim()
-                def tags = parseTags(parts[1].trim())
-
-                echo "Updating ${xmlFile} with tags: ${tags}"
-
-                def psScript = """
-                    [xml]\$xml = Get-Content "${xmlFile}"
-                    \$nsMgr = New-Object System.Xml.XmlNamespaceManager(\$xml.NameTable)
-                    \$nsMgr.AddNamespace("ns", \$xml.DocumentElement.NamespaceURI)
-                    ${tags.collect { k,v -> "\$xml.SelectSingleNode(\"//ns:${k}\", \$nsMgr).InnerText = '${v}'" }.join("\n")}
-                    \$xml.Save("${xmlFile}")
-                """
-
-                powershell(returnStatus: true, script: psScript)
+    stages {
+        stage('Prepare') {
+            steps {
+                script {
+                    echo "[STEP] Creating log and backup directories..."
+                    def logDir = "deployment_logs"
+                    def backupDir = "backups"
+                    if (isUnix()) {
+                        sh "mkdir -p ${logDir} ${backupDir}"
+                    } else {
+                        bat """
+                            if not exist "${logDir}" mkdir "${logDir}"
+                            if not exist "${backupDir}" mkdir "${backupDir}"
+                        """
+                    }
+                }
             }
         }
-        echo "XML files updated successfully."
-    }
 
-    // -------------------------------
-    // 4️⃣ Validate updated XML values
-    // -------------------------------
-    stage('Validate Changes') {
-        echo "[STEP] Validating XML updates..."
-        tagsInput.split("\n").each { line ->
-            if(line.trim()) {
-                def parts = line.split(":")
-                def xmlFile = parts[0].trim()
-                def tags = parseTags(parts[1].trim())
-
-                def validationScript = """
-                    [xml]\$xml = Get-Content "${xmlFile}"
-                    \$nsMgr = New-Object System.Xml.XmlNamespaceManager(\$xml.NameTable)
-                    \$nsMgr.AddNamespace("ns", \$xml.DocumentElement.NamespaceURI)
-                    \$valid = \$true
-                    ${tags.collect { k,v -> "if (\$xml.SelectSingleNode(\"//ns:${k}\", \$nsMgr).InnerText -ne '${v}') { \$valid = \$false }" }.join("\n")}
-                    if (-not \$valid) { exit 1 }
-                """
-
-                powershell(returnStatus: true, script: validationScript)
+        stage('Backup XML') {
+            steps {
+                script {
+                    def timestamp = new Date().format('yyyyMMdd_HHmmss')
+                    def backupFiles = [:]
+                    XML_FILES.split(",").each { file ->
+                        file = file.trim()
+                        def backupFile = "${file}.bak_${timestamp}"
+                        backupFiles[file] = backupFile
+                        // Validate file exists
+                        if (isUnix()) {
+                            sh "test -f ${file} || (echo File not found: ${file} && exit 1)"
+                            sh "cp ${file} ${backupFile}"
+                        } else {
+                            bat "if not exist \"${file}\" (echo File not found: ${file} & exit 1)"
+                            bat "copy /Y \"${file}\" \"${backupFile}\""
+                        }
+                        echo "Backup created: ${backupFile}"
+                    }
+                    // Store backup map in env variable for rollback
+                    env.BACKUP_FILES = groovy.json.JsonOutput.toJson(backupFiles)
+                }
             }
         }
-        echo "Validation passed for all XML files."
-    }
 
-    // -------------------------------
-    // 5️⃣ Deploy to Salesforce
-    // -------------------------------
-    stage('Deploy to Salesforce') {
-        echo "[STEP] Deploying to org: ${orgAlias}"
-        def deployLog = "${logDir}/deploy_${timestamp}.json"
+        stage('Update XML') {
+            steps {
+                script {
+                    TAGS_MAP.split("\n").each { line ->
+                        if(line.trim()) {
+                            def parts = line.split(":")
+                            if(parts.size() != 2) { error "Invalid format in TAGS_MAP: ${line}" }
+                            def xmlFile = parts[0].trim()
+                            def tags = parts[1].trim().split(",").collectEntries { kv ->
+                                def pair = kv.split("=")
+                                [(pair[0].trim()) : pair[1].trim()]
+                            }
 
-        runCommand(
-            "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}",
-            "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}"
-        )
+                            echo "Updating ${xmlFile} with tags: ${tags}"
 
-        echo "Deployment completed. Log: ${deployLog}"
-    }
+                            def psScript = """
+                                [xml]\$xml = Get-Content "${xmlFile}"
+                                \$nsMgr = New-Object System.Xml.XmlNamespaceManager(\$xml.NameTable)
+                                \$nsMgr.AddNamespace("ns", \$xml.DocumentElement.NamespaceURI)
+                                ${tags.collect { k,v -> "\$xml.SelectSingleNode(\"//ns:${k}\", \$nsMgr).InnerText = '${v}'" }.join("\n")}
+                                \$xml.Save("${xmlFile}")
+                            """
 
-    // -------------------------------
-    // 6️⃣ Push updated XML files to GitHub
-    // -------------------------------
-    stage('Push to GitHub') {
-        echo "[STEP] Pushing updated XML files to GitHub..."
-        runCommand(
-            "git config user.email 'jenkins@example.com' && git config user.name 'Jenkins CI'",
-            "git config user.email 'jenkins@example.com' & git config user.name 'Jenkins CI'"
-        )
-
-        xmlFilesInput.split(",").each { file ->
-            file = file.trim()
-            runCommand("git add ${file}", "git add \"${file}\"")
+                            powershell(returnStatus: true, script: psScript)
+                        }
+                    }
+                    echo "XML files updated successfully."
+                }
+            }
         }
 
-        runCommand(
-            "git commit -m 'Updated XML files' || echo 'No changes to commit'",
-            "git commit -m \"Updated XML files\" || echo No changes to commit"
-        )
+        stage('Validate Changes') {
+            steps {
+                script {
+                    TAGS_MAP.split("\n").each { line ->
+                        if(line.trim()) {
+                            def parts = line.split(":")
+                            def xmlFile = parts[0].trim()
+                            def tags = parts[1].trim().split(",").collectEntries { kv ->
+                                def pair = kv.split("=")
+                                [(pair[0].trim()) : pair[1].trim()]
+                            }
 
-        runCommand("git push origin HEAD", "git push origin HEAD")
-        echo "Changes pushed to GitHub successfully."
+                            def validationScript = """
+                                [xml]\$xml = Get-Content "${xmlFile}"
+                                \$nsMgr = New-Object System.Xml.XmlNamespaceManager(\$xml.NameTable)
+                                \$nsMgr.AddNamespace("ns", \$xml.DocumentElement.NamespaceURI)
+                                \$valid = \$true
+                                ${tags.collect { k,v -> "if (\$xml.SelectSingleNode(\"//ns:${k}\", \$nsMgr).InnerText -ne '${v}') { \$valid = \$false }" }.join("\n")}
+                                if (-not \$valid) { exit 1 }
+                            """
+
+                            powershell(returnStatus: true, script: validationScript)
+                        }
+                    }
+                    echo "Validation passed for all XML files."
+                }
+            }
+        }
+
+        stage('Deploy to Salesforce') {
+            steps {
+                script {
+                    def deployLog = "deployment_logs/deploy_${new Date().format('yyyyMMdd_HHmmss')}.json"
+                    if (isUnix()) {
+                        sh "sf deploy metadata --manifest ./manifest/package.xml --target-org ${ORG_ALIAS} --test-level RunLocalTests --wait 30 --json > ${deployLog}"
+                    } else {
+                        bat "sf deploy metadata --manifest ./manifest/package.xml --target-org ${ORG_ALIAS} --test-level RunLocalTests --wait 30 --json > ${deployLog}"
+                    }
+                    echo "Deployment completed. Log: ${deployLog}"
+                }
+            }
+        }
+
+        stage('Push to GitHub') {
+            steps {
+                script {
+                    if (isUnix()) {
+                        sh "git config user.email 'jenkins@example.com' && git config user.name 'Jenkins CI'"
+                    } else {
+                        bat "git config user.email 'jenkins@example.com' & git config user.name 'Jenkins CI'"
+                    }
+
+                    XML_FILES.split(",").each { file ->
+                        file = file.trim()
+                        if (isUnix()) { sh "git add ${file}" } else { bat "git add \"${file}\"" }
+                    }
+
+                    if (isUnix()) {
+                        sh "git commit -m 'Updated XML files' || echo 'No changes to commit'"
+                        sh "git push origin HEAD"
+                    } else {
+                        bat "git commit -m \"Updated XML files\" || echo No changes to commit"
+                        bat "git push origin HEAD"
+                    }
+
+                    echo "Changes pushed to GitHub successfully."
+                }
+            }
+        }
     }
 
-    // -------------------------------
-    // Post-failure rollback
-    // -------------------------------
-    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-        stage('Rollback on Failure') {
-            if(backupFiles.size() > 0) {
+    post {
+        failure {
+            script {
                 echo "[ROLLBACK] Restoring backups..."
+                def backupFiles = groovy.json.JsonSlurperClassic().parseText(env.BACKUP_FILES)
                 backupFiles.each { orig, backup ->
-                    runCommand(
-                        "cp ${backup} ${orig}",
-                        "copy /Y \"${backup}\" \"${orig}\""
-                    )
+                    if (isUnix()) {
+                        sh "cp ${backup} ${orig}"
+                    } else {
+                        bat "copy /Y \"${backup}\" \"${orig}\""
+                    }
                     echo "Restored ${orig} from ${backup}"
                 }
             }
