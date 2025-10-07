@@ -16,7 +16,7 @@ node {
     def waitTime = 30
     def testLevel = "RunLocalTests"
     def timestamp = new Date().format('yyyyMMdd_HHmmss')
-    def backupFiles = [:]
+    def backupFiles = [:]  // Track backups for rollback
 
     // -------------------------------
     // Helper Functions
@@ -176,7 +176,7 @@ node {
         echo "[FAILURE] ${err}"
         if(env.BACKUP_FILES) {
             echo "[ROLLBACK] Restoring backups..."
-            def backupFiles = new groovy.json.JsonSlurperClassic().parseText(env.BACKUP_FILES)
+            backupFiles = new groovy.json.JsonSlurperClassic().parseText(env.BACKUP_FILES)
             backupFiles.each { orig, backup ->
                 runCommand(
                     "cp ${backup} ${orig}",
