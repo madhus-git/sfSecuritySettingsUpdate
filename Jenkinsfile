@@ -1,7 +1,23 @@
+// ================================
+// Scripted Jenkins Pipeline
+// ================================
 node {
 
     // -------------------------------
-    // Parameters
+    // Parameters (Build with Parameters)
+    // -------------------------------
+    properties([
+        parameters([
+            string(name: 'OrgAlias', defaultValue: '', description: 'Salesforce Org Alias'),
+            string(name: 'XMLFilePath', defaultValue: '', description: 'Path to XML file to update'),
+            string(name: 'TagName', defaultValue: '', description: 'XML Tag to update'),
+            string(name: 'TagValue', defaultValue: '', description: 'New value for XML Tag'),
+            string(name: 'BranchName', defaultValue: 'devOrg', description: 'Git branch to push changes')
+        ])
+    ])
+
+    // -------------------------------
+    // Initialize Variables
     // -------------------------------
     def ORG_ALIAS = params.OrgAlias ?: ''
     def XML_PATH = params.XMLFilePath ?: ''
@@ -25,14 +41,13 @@ node {
             checkout scm
         }
 
-        stage('Create Backup Folder and Backup Retrieved Settings') {
+        stage('Create Backup Folder and Backup XML') {
             echo "Creating backup folder: ${BACKUP_DIR}"
             if (isUnix()) {
                 sh "mkdir -p \"${BACKUP_DIR}\""
                 sh "cp \"${XML_PATH}\" \"${BACKUP_DIR}/\""
             } else {
                 bat "mkdir \"${BACKUP_DIR}\""
-                // Safe xcopy with file existence check
                 bat """
                     if exist "${XML_PATH}" (
                         xcopy "${XML_PATH}" "${BACKUP_DIR}\\\" /Y /I
@@ -50,7 +65,7 @@ node {
             if (isUnix()) {
                 fileExists = sh(script: "test -f \"${XML_PATH}\" && echo true || echo false", returnStdout: true).trim() == "true"
             } else {
-                fileExists = bat(script: "if exist \"${XML_PATH}\" (echo true) else (echo false)", returnStdout: true).trim() == "true"
+                fileExists = bat(script: "if exist \"${XML_PATH}\" (echo true) else (echo false)", returnStdout: true).trim().toLowerCase().contains("true")
             }
 
             if (!fileExists) {
@@ -73,10 +88,12 @@ node {
         stage('Detect Changes in XML') {
             echo "Checking for changes..."
             def diffOutput = ""
+            def fileName = XML_PATH.tokenize('/').last()
             if (isUnix()) {
-                diffOutput = sh(script: "diff \"${BACKUP_DIR}/${XML_PATH.tokenize('/').last()}\" \"${XML_PATH}\" || true", returnStdout: true).trim()
+                diffOutput = sh(script: "diff \"${BACKUP_DIR}/${fileName}\" \"${XML_PATH}\" || true", returnStdout: true).trim()
             } else {
-                diffOutput = bat(script: "fc \"${BACKUP_DIR}\\${XML_PATH.tokenize('\\\\/').last()}\" \"${XML_PATH}\"", returnStdout: true).trim()
+                fileName = XML_PATH.tokenize('\\\\/').last()
+                diffOutput = bat(script: "fc \"${BACKUP_DIR}\\${fileName}\" \"${XML_PATH}\"", returnStdout: true).trim()
             }
 
             if (!diffOutput) {
