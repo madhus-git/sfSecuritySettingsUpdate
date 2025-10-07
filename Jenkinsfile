@@ -18,10 +18,10 @@ pipeline {
         stage('Update XML Files') {
             steps {
                 script {
-                    echo "🛠 Updating XML files under force-app/main/default/settings..."
-                    def xmlDir = "force-app/main/default/settings"
+                    echo "🛠 Updating XML files under force-app\\main\\default\\settings..."
+                    def xmlDir = "force-app\\main\\default\\settings"
 
-                    // Parse user-provided key=value pairs into a map
+                    // Parse key=value pairs into a map
                     def updateMap = [:]
                     params.UPDATE_MAP.split("\n").each { line ->
                         def parts = line.trim().split("=")
@@ -30,11 +30,12 @@ pipeline {
                         }
                     }
 
-                    def files = sh(script: "ls ${xmlDir}/*.xml", returnStdout: true).trim().split("\n")
+                    // Get list of XML files using PowerShell
+                    def filesOutput = bat(script: "powershell -Command \"Get-ChildItem -Path '${xmlDir}' -Filter *.xml | ForEach-Object { $_.FullName }\"", returnStdout: true).trim()
+                    def files = filesOutput.split("\r?\n")
 
                     files.each { filePath ->
                         def content = readFile(file: filePath)
-
                         updateMap.each { key, value ->
                             def oldPattern = "<${key}>.*?</${key}>"
                             def newPattern = "<${key}>${value}</${key}>"
@@ -45,7 +46,6 @@ pipeline {
                                 echo "⚠️ Tag '${key}' not found in ${filePath}"
                             }
                         }
-
                         writeFile(file: filePath, text: content)
                     }
                 }
@@ -56,8 +56,9 @@ pipeline {
             steps {
                 script {
                     echo "🔍 Validating XML updates..."
-                    def xmlDir = "force-app/main/default/settings"
-                    def files = sh(script: "ls ${xmlDir}/*.xml", returnStdout: true).trim().split("\n")
+                    def xmlDir = "force-app\\main\\default\\settings"
+                    def filesOutput = bat(script: "powershell -Command \"Get-ChildItem -Path '${xmlDir}' -Filter *.xml | ForEach-Object { $_.FullName }\"", returnStdout: true).trim()
+                    def files = filesOutput.split("\r?\n")
                     def failed = false
 
                     files.each { filePath ->
@@ -84,12 +85,12 @@ pipeline {
             steps {
                 script {
                     echo "💾 Committing updated XML files..."
-                    sh '''
+                    bat '''
                         git config user.email "jenkins@local"
                         git config user.name "Jenkins"
-                        git add force-app/main/default/settings/*.xml
-                        git commit -m "Automated XML update via Jenkins pipeline"
-                        git push origin HEAD:main || echo "⚠️ Git push skipped (no changes or permissions issue)"
+                        git add force-app\\main\\default\\settings\\*.xml
+                        git commit -m "Automated XML update via Jenkins pipeline" || echo "⚠️ No changes to commit"
+                        git push origin HEAD:main || echo "⚠️ Git push skipped (permissions or no changes)"
                     '''
                 }
             }
@@ -99,7 +100,7 @@ pipeline {
             steps {
                 script {
                     echo "🚀 Deploying updated metadata to org: ${params.ORG_ALIAS}"
-                    sh """
+                    bat """
                         sf project deploy start --source-dir force-app --target-org ${params.ORG_ALIAS} --ignore-warnings --verbose
                     """
                 }
