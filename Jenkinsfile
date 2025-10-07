@@ -1,5 +1,5 @@
 // ================================
-// Scripted Jenkins Pipeline (Cross-Platform Safe, Git Detached HEAD Fixed)
+// Scripted Jenkins Pipeline (Secure JWT Auth via Jenkins Credentials)
 // ================================
 node {
 
@@ -8,7 +8,7 @@ node {
     // -------------------------------
     properties([
         parameters([
-            string(name: 'OrgAlias', defaultValue: '', description: 'Salesforce Org Alias'),
+            string(name: 'OrgAlias', defaultValue: '', description: 'Salesforce Org Alias / Username'),
             string(name: 'XMLFilePath', defaultValue: '', description: 'Path to XML file to update'),
             string(name: 'TagName', defaultValue: '', description: 'XML Tag to update'),
             string(name: 'TagValue', defaultValue: '', description: 'New value for XML Tag'),
@@ -99,14 +99,12 @@ node {
                     return
                 }
             } else {
-                // Ensure backup file exists
                 bat """
                     if not exist "${backupFile}" (
                         echo Backup file not found: ${backupFile}
                         exit /b 1
                     )
                 """
-                // Ignore fc exit code but capture output
                 def diffOutput = bat(script: "fc \"${backupFile}\" \"${XML_PATH}\" || exit /b 0", returnStdout: true).trim()
                 if (!diffOutput) {
                     echo "No changes detected. Skipping Git push and deployment."
@@ -139,11 +137,41 @@ node {
                 """
             } else {
                 bat """
+                    git config user.email "jenkins@example.com"
+                    git config user.name "Jenkins CI"
                     git checkout -B ${GIT_BRANCH}
                     git add "${XML_PATH}"
                     git commit -m "Updated <${TAG_NAME}> to ${TAG_VALUE} via Jenkins build #${env.BUILD_ID}" || echo No changes to commit
                     git push -u origin ${GIT_BRANCH}
                 """
+            }
+        }
+
+        stage('Authenticate Salesforce Org (JWT)') {
+            echo "Authenticating Salesforce Org: ${ORG_ALIAS} using JWT from Jenkins credentials..."
+
+            // Retrieve credentials securely
+            withCredentials([
+                string(credentialsId: 'SF_CLIENT_ID', variable: 'SF_CLIENT_ID'),
+                file(credentialsId: 'SF_JWT_KEY_FILE', variable: 'SF_JWT_KEY_FILE')
+            ]) {
+                if (isUnix()) {
+                    sh """
+                        sf auth:jwt:grant \
+                            --client-id ${SF_CLIENT_ID} \
+                            --jwt-key-file ${SF_JWT_KEY_FILE} \
+                            --username ${ORG_ALIAS} \
+                            --set-default-dev-hub
+                    """
+                } else {
+                    bat """
+                        sf auth:jwt:grant ^
+                            --client-id ${SF_CLIENT_ID} ^
+                            --jwt-key-file ${SF_JWT_KEY_FILE} ^
+                            --username ${ORG_ALIAS} ^
+                            --set-default-dev-hub
+                    """
+                }
             }
         }
 
