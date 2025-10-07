@@ -40,7 +40,7 @@ node {
             def files = []
             if (isWindows) {
                 files = bat(
-                    script: 'powershell -Command "Get-ChildItem -Path \'' + xmlDir + '\' -Filter *.xml | ForEach-Object { $_.FullName }"',
+                    script: """powershell -NoProfile -Command "Get-ChildItem -Path '${xmlDir}' -Filter *.xml | ForEach-Object { \$_.FullName }" """,
                     returnStdout: true
                 ).trim().split("\\r?\\n")
             } else {
@@ -83,7 +83,7 @@ node {
             def files = []
             if (isWindows) {
                 files = bat(
-                    script: 'powershell -Command "Get-ChildItem -Path \'' + xmlDir + '\' -Filter *.xml | ForEach-Object { $_.FullName }"',
+                    script: """powershell -NoProfile -Command "Get-ChildItem -Path '${xmlDir}' -Filter *.xml | ForEach-Object { \$_.FullName }" """,
                     returnStdout: true
                 ).trim().split("\\r?\\n")
             } else {
@@ -138,14 +138,14 @@ node {
         // ==================================================
         // 6️⃣ Deploy to Salesforce Org
         // ==================================================
-        /*stage('Deploy to Org') {
+        stage('Deploy to Org') {
             echo "🚀 Deploying to Salesforce Org: ${params.ORG_ALIAS}"
             if (isWindows) {
                 bat "sf project deploy start --source-dir force-app --target-org ${params.ORG_ALIAS} --ignore-warnings --verbose"
             } else {
                 sh "sf project deploy start --source-dir force-app --target-org ${params.ORG_ALIAS} --ignore-warnings --verbose"
             }
-        }*/
+        }
 
         echo "🎉 Pipeline completed successfully for org: ${params.ORG_ALIAS}"
 
