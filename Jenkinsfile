@@ -45,7 +45,6 @@ node {
         if (isUnix()) {
             sh "cp '${src}' '${dest}'"
         } else {
-            // Only convert file paths, keep /Y intact
             src = src.replace('/', '\\')
             dest = dest.replace('/', '\\')
             bat "copy /Y \"${src}\" \"${dest}\""
@@ -202,7 +201,8 @@ node {
         echo "[FAILURE] ${err}"
         if(env.BACKUP_FILES) {
             echo "[ROLLBACK] Restoring backups..."
-            backupFiles = new groovy.json.JsonSlurperClassic().parseText(env.BACKUP_FILES)
+            def backupFilesJson = env.BACKUP_FILES
+            def backupFiles = new groovy.json.JsonSlurper().parseText(backupFilesJson)
             backupFiles.each { orig, backup ->
                 copyFile(backup, orig)
                 echo "Restored ${orig} from ${backup}"
