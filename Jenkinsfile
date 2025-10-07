@@ -19,138 +19,112 @@ node {
         }
 
         // ==================================================
-        // 3️⃣ Update XML Files
+        // 3️⃣ Locate XML Files
+        // ==================================================
+        stage('Locate XML Files') {
+            echo "🔍 Locating XML files under force-app/main/default/settings..."
+            def xmlDir = new File("${env.WORKSPACE}/force-app/main/default/settings")
+            if (!xmlDir.exists()) error "Settings directory not found: ${xmlDir}"
+
+            def xmlFiles = []
+            xmlDir.eachFileRecurse { file ->
+                if (file.name.endsWith(".xml")) {
+                    xmlFiles << file
+                }
+            }
+
+            if (xmlFiles.isEmpty()) error "No XML files found in ${xmlDir}"
+            env.XML_FILE_PATHS = xmlFiles.collect { it.path }.join(';')
+            echo "Found ${xmlFiles.size()} XML file(s)."
+        }
+
+        // ==================================================
+        // 4️⃣ Update XML Files
         // ==================================================
         stage('Update XML Files') {
-            echo "🛠 Updating XML files under force-app/main/default/settings..."
+            echo "🛠 Updating XML files..."
 
-            def xmlDir = "force-app/main/default/settings"
-            def isWindows = !isUnix()
-
-            // Convert key=value text to map
-            def updateMap = [:]
+            def keysValues = [:]
             params.UPDATE_MAP.split("\n").each { line ->
                 def parts = line.trim().split("=")
-                if (parts.size() == 2) {
-                    updateMap[parts[0].trim()] = parts[1].trim()
-                }
+                if (parts.size() == 2) keysValues[parts[0].trim()] = parts[1].trim()
             }
 
-            // Get all .xml files
-            def files = []
-            if (isWindows) {
-                files = bat(
-                    script: """powershell -NoProfile -Command "Get-ChildItem -Path '${xmlDir}' -Filter *.xml | ForEach-Object { \$_.FullName }" """,
-                    returnStdout: true
-                ).trim().split("\\r?\\n")
-            } else {
-                files = sh(
-                    script: "find ${xmlDir} -type f -name '*.xml'",
-                    returnStdout: true
-                ).trim().split("\\r?\\n")
-            }
+            def xmlFiles = env.XML_FILE_PATHS.split(';').collect { new File(it) }
 
-            // Update each XML file
-            files.each { filePath ->
-                def content = readFile(file: filePath)
-                updateMap.each { key, value ->
-                    def oldPattern = "<${key}>.*?</${key}>"
-                    def newPattern = "<${key}>${value}</${key}>"
-                    if (content =~ oldPattern) {
-                        content = content.replaceAll(oldPattern, newPattern)
-                        echo "✅ Updated ${key} = ${value} in ${filePath}"
+            xmlFiles.each { file ->
+                echo "Updating file: ${file.path}"
+                def xml = new XmlParser().parse(file)
+
+                keysValues.each { key, value ->
+                    def node = xml."${key}"
+                    if (node) {
+                        node[0].value = value
+                        echo "✅ Updated ${key} -> ${value}"
                     } else {
-                        echo "⚠️ Tag ${key} not found in ${filePath}, adding it..."
-                        def insertIndex = content.lastIndexOf("</")
-                        if (insertIndex > 0) {
-                            content = content.substring(0, insertIndex) + "<${key}>${value}</${key}>\n" + content.substring(insertIndex)
-                        }
+                        xml.appendNode(key, value)
+                        echo "⚠️ Added missing node ${key} -> ${value}"
                     }
                 }
-                writeFile(file: filePath, text: content)
+
+                // Write XML back
+                def writer = new FileWriter(file)
+                def printer = new XmlNodePrinter(new PrintWriter(writer))
+                printer.setPreserveWhitespace(true)
+                printer.print(xml)
+                writer.close()
             }
         }
 
         // ==================================================
-        // 4️⃣ Validate XML Updates
+        // 5️⃣ Validate Updates
         // ==================================================
         stage('Validate Updates') {
             echo "🔍 Validating XML updates..."
-            def xmlDir = "force-app/main/default/settings"
-            def isWindows = !isUnix()
+            def xmlFiles = env.XML_FILE_PATHS.split(';').collect { new File(it) }
             def failed = false
 
-            def files = []
-            if (isWindows) {
-                files = bat(
-                    script: """powershell -NoProfile -Command "Get-ChildItem -Path '${xmlDir}' -Filter *.xml | ForEach-Object { \$_.FullName }" """,
-                    returnStdout: true
-                ).trim().split("\\r?\\n")
-            } else {
-                files = sh(
-                    script: "find ${xmlDir} -type f -name '*.xml'",
-                    returnStdout: true
-                ).trim().split("\\r?\\n")
-            }
-
-            files.each { filePath ->
-                def content = readFile(file: filePath)
+            xmlFiles.each { file ->
+                def xml = new XmlParser().parse(file)
                 params.UPDATE_MAP.split("\n").each { line ->
                     def (key, value) = line.trim().tokenize("=")
-                    if (!content.contains("<${key}>${value}</${key}>")) {
-                        echo "❌ Validation failed for ${key} in ${filePath}"
+                    def nodeValue = xml."${key}" ? xml."${key}"[0].text() : null
+                    if (nodeValue != value) {
+                        echo "❌ Validation failed for ${key} in ${file.path}. Expected: ${value}, Found: ${nodeValue}"
                         failed = true
                     }
                 }
             }
 
-            if (failed) {
-                error("❌ XML validation failed — some values not updated correctly.")
-            } else {
-                echo "✅ All XML values validated successfully."
-            }
+            if (failed) error "❌ XML validation failed!"
+            echo "✅ All XML updates validated successfully."
         }
 
         // ==================================================
-        // 5️⃣ Commit Updated Files
+        // 6️⃣ Commit Updates to Git
         // ==================================================
         stage('Commit to Git') {
-            echo "💾 Committing changes to Git..."
-            if (isWindows) {
-                bat '''
-                    git config user.email "jenkins@local"
-                    git config user.name "Jenkins"
-                    git add force-app\\main\\default\\settings\\*.xml
-                    git commit -m "Automated XML update via Jenkins pipeline" || echo "⚠️ No changes to commit"
-                    git push origin HEAD:main || echo "⚠️ Push skipped"
-                '''
-            } else {
-                sh '''
-                    git config user.email "jenkins@local"
-                    git config user.name "Jenkins"
-                    git add force-app/main/default/settings/*.xml
-                    git commit -m "Automated XML update via Jenkins pipeline" || echo "⚠️ No changes to commit"
-                    git push origin HEAD:main || echo "⚠️ Push skipped"
-                '''
-            }
+            echo "💾 Committing updates to Git..."
+            def xmlFiles = env.XML_FILE_PATHS.split(';').collect { it.path }.join(' ')
+            sh "git config user.email 'jenkins@local'"
+            sh "git config user.name 'Jenkins'"
+            sh "git add ${xmlFiles}"
+            sh "git commit -m 'Automated XML update via Jenkins pipeline' || echo '⚠️ No changes to commit'"
+            sh "git push origin HEAD:main || echo '⚠️ Push skipped'"
         }
 
         // ==================================================
-        // 6️⃣ Deploy to Salesforce Org
+        // 7️⃣ Deploy to Salesforce Org
         // ==================================================
-        stage('Deploy to Org') {
+        stage('Deploy to Salesforce Org') {
             echo "🚀 Deploying to Salesforce Org: ${params.ORG_ALIAS}"
-            if (isWindows) {
-                bat "sf project deploy start --source-dir force-app --target-org ${params.ORG_ALIAS} --ignore-warnings --verbose"
-            } else {
-                sh "sf project deploy start --source-dir force-app --target-org ${params.ORG_ALIAS} --ignore-warnings --verbose"
-            }
+            sh "sf project deploy start --source-dir force-app --target-org ${params.ORG_ALIAS} --ignore-warnings --verbose"
         }
 
         echo "🎉 Pipeline completed successfully for org: ${params.ORG_ALIAS}"
 
     } catch (err) {
-        echo "❌ Error: ${err.message}"
+        echo "❌ Pipeline failed: ${err.message}"
         currentBuild.result = 'FAILURE'
         throw err
     }
