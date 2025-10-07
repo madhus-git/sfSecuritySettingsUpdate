@@ -1,5 +1,5 @@
 // ================================
-// Scripted Jenkins Pipeline (Cross-Platform Safe)
+// Scripted Jenkins Pipeline (Windows & Unix Safe)
 // ================================
 node {
 
@@ -28,6 +28,13 @@ node {
     def xmlFileName = XML_PATH.tokenize('\\\\/').last()
     def backupFile = "${BACKUP_DIR}/${xmlFileName}"
 
+    // Normalize path for Windows
+    if (!isUnix()) {
+        XML_PATH = XML_PATH.replaceAll('/', '\\\\')
+        backupFile = backupFile.replaceAll('/', '\\\\')
+        BACKUP_DIR = BACKUP_DIR.replaceAll('/', '\\\\')
+    }
+
     try {
 
         // -------------------------------
@@ -47,7 +54,7 @@ node {
             echo "Creating backup folder: ${BACKUP_DIR}"
             if (isUnix()) {
                 sh "mkdir -p \"${BACKUP_DIR}\""
-                sh "cp \"${XML_PATH}\" \"${BACKUP_DIR}/\""
+                sh "cp \"${XML_PATH}\" \"${backupFile}\""
             } else {
                 bat """
                     if not exist "${BACKUP_DIR}" mkdir "${BACKUP_DIR}"
@@ -94,12 +101,12 @@ node {
             } else {
                 // Ensure backup file exists
                 bat """
-                    if not exist "${BACKUP_DIR}\\${xmlFileName}" (
-                        echo Backup file not found: ${BACKUP_DIR}\\${xmlFileName}
+                    if not exist "${backupFile}" (
+                        echo Backup file not found: ${backupFile}
                         exit /b 1
                     )
                 """
-                def diffOutput = bat(script: "fc \"${BACKUP_DIR}\\${xmlFileName}\" \"${XML_PATH}\"", returnStdout: true).trim()
+                def diffOutput = bat(script: "fc \"${backupFile}\" \"${XML_PATH}\"", returnStdout: true).trim()
                 if (!diffOutput) {
                     echo "No changes detected. Skipping Git push and deployment."
                     currentBuild.result = 'SUCCESS'
