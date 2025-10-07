@@ -38,9 +38,6 @@ node {
         return map
     }
 
-    // -------------------------------
-    // Robust cross-platform copy helper
-    // -------------------------------
     def copyFile = { src, dest ->
         if (isUnix()) {
             sh "cp '${src}' '${dest}'"
@@ -96,7 +93,6 @@ node {
                 copyFile(file, backupFile)
                 echo "Backup created: ${backupFile}"
             }
-            // Save backupFiles to env for rollback
             env.BACKUP_FILES = groovy.json.JsonOutput.toJson(backupFiles)
         }
 
@@ -160,11 +156,14 @@ node {
         stage('Deploy to Salesforce') {
             echo "[STEP] Deploying to org: ${orgAlias}"
             def deployLog = "${logDir}/deploy_${timestamp}.json"
-            if (isUnix()) {
-                sh "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}"
-            } else {
-                bat "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}"
+
+            def exitCode = isUnix() ? sh(script: "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}", returnStatus: true)
+                                      : bat(script: "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}", returnStatus: true)
+
+            if(exitCode != 0) {
+                error "[FAILURE] Salesforce deployment failed. Check ${deployLog}"
             }
+
             echo "Deployment completed. Log: ${deployLog}"
         }
 
