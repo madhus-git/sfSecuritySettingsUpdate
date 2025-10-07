@@ -1,10 +1,14 @@
 node {
     // -------------------------------
-    // 0️⃣ Parameters
+    // 0️⃣ Parameters (passed at build time)
     // -------------------------------
-    def orgAlias = params.ORG_ALIAS ?: input(message: 'Enter Salesforce Org Alias', parameters: [string(name: 'ORG_ALIAS')])
-    def xmlFilesInput = params.XML_FILES ?: input(message: 'Enter XML files (comma-separated)', parameters: [string(name: 'XML_FILES')])
-    def tagsInput = params.TAGS_MAP ?: input(message: 'Enter tags for each XML (format: filePath:tag1=value1,tag2=value2)', parameters: [text(name: 'TAGS_MAP')])
+    def orgAlias = params.ORG_ALIAS
+    def xmlFilesInput = params.XML_FILES        // Comma-separated paths
+    def tagsInput = params.TAGS_MAP             // Format: filePath:tag1=value1,tag2=value2 per line
+
+    if (!orgAlias || !xmlFilesInput || !tagsInput) {
+        error "Please provide ORG_ALIAS, XML_FILES, and TAGS_MAP as build parameters"
+    }
 
     def logDir = "deployment_logs"
     def backupDir = "backups"
@@ -26,11 +30,11 @@ node {
         return map
     }
 
-    def runCommand = { cmd ->
+    def runCommand = { cmdUnix, cmdWin ->
         if (isUnix()) {
-            sh cmd
+            sh cmdUnix
         } else {
-            bat cmd
+            bat cmdWin
         }
     }
 
@@ -39,14 +43,10 @@ node {
     // -------------------------------
     stage('Prepare') {
         echo "[STEP] Creating log and backup directories..."
-        if (isUnix()) {
-            sh "mkdir -p ${logDir} ${backupDir}"
-        } else {
-            bat """
-                if not exist "${logDir}" mkdir "${logDir}"
-                if not exist "${backupDir}" mkdir "${backupDir}"
-            """
-        }
+        runCommand("mkdir -p ${logDir} ${backupDir}", """
+            if not exist "${logDir}" mkdir "${logDir}"
+            if not exist "${backupDir}" mkdir "${backupDir}"
+        """)
     }
 
     // -------------------------------
@@ -58,11 +58,19 @@ node {
             file = file.trim()
             def backupFile = "${file}.bak_${timestamp}"
             backupFiles[file] = backupFile
-            if (isUnix()) {
-                sh "cp ${file} ${backupFile}"
-            } else {
-                bat "copy /Y \"${file}\" \"${backupFile}\""
-            }
+
+            // Validate file exists
+            runCommand(
+                "test -f ${file} || (echo File not found: ${file} && exit 1)",
+                "if not exist \"${file}\" (echo File not found: ${file} & exit 1)"
+            )
+
+            // Copy backup
+            runCommand(
+                "cp ${file} ${backupFile}",
+                "copy /Y \"${file}\" \"${backupFile}\""
+            )
+
             echo "Backup created: ${backupFile}"
         }
     }
@@ -88,11 +96,8 @@ node {
                     ${tags.collect { k,v -> "\$xml.SelectSingleNode(\"//ns:${k}\", \$nsMgr).InnerText = '${v}'" }.join("\n")}
                     \$xml.Save("${xmlFile}")
                 """
-                if (isUnix()) {
-                    powershell(returnStatus: true, script: psScript)
-                } else {
-                    powershell(returnStatus: true, script: psScript)
-                }
+
+                powershell(returnStatus: true, script: psScript)
             }
         }
         echo "XML files updated successfully."
@@ -117,11 +122,8 @@ node {
                     ${tags.collect { k,v -> "if (\$xml.SelectSingleNode(\"//ns:${k}\", \$nsMgr).InnerText -ne '${v}') { \$valid = \$false }" }.join("\n")}
                     if (-not \$valid) { exit 1 }
                 """
-                if (isUnix()) {
-                    powershell(returnStatus: true, script: validationScript)
-                } else {
-                    powershell(returnStatus: true, script: validationScript)
-                }
+
+                powershell(returnStatus: true, script: validationScript)
             }
         }
         echo "Validation passed for all XML files."
@@ -133,11 +135,12 @@ node {
     stage('Deploy to Salesforce') {
         echo "[STEP] Deploying to org: ${orgAlias}"
         def deployLog = "${logDir}/deploy_${timestamp}.json"
-        if (isUnix()) {
-            sh "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}"
-        } else {
-            bat "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}"
-        }
+
+        runCommand(
+            "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}",
+            "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}"
+        )
+
         echo "Deployment completed. Log: ${deployLog}"
     }
 
@@ -146,21 +149,22 @@ node {
     // -------------------------------
     stage('Push to GitHub') {
         echo "[STEP] Pushing updated XML files to GitHub..."
+        runCommand(
+            "git config user.email 'jenkins@example.com' && git config user.name 'Jenkins CI'",
+            "git config user.email 'jenkins@example.com' & git config user.name 'Jenkins CI'"
+        )
+
         xmlFilesInput.split(",").each { file ->
             file = file.trim()
-            if (isUnix()) {
-                sh "git add ${file}"
-            } else {
-                bat "git add \"${file}\""
-            }
+            runCommand("git add ${file}", "git add \"${file}\"")
         }
-        if (isUnix()) {
-            sh 'git commit -m "Updated XML files" || echo "No changes to commit"'
-            sh 'git push origin HEAD'
-        } else {
-            bat 'git commit -m "Updated XML files" || echo No changes to commit'
-            bat 'git push origin HEAD'
-        }
+
+        runCommand(
+            "git commit -m 'Updated XML files' || echo 'No changes to commit'",
+            "git commit -m \"Updated XML files\" || echo No changes to commit"
+        )
+
+        runCommand("git push origin HEAD", "git push origin HEAD")
         echo "Changes pushed to GitHub successfully."
     }
 
@@ -172,11 +176,10 @@ node {
             if(backupFiles.size() > 0) {
                 echo "[ROLLBACK] Restoring backups..."
                 backupFiles.each { orig, backup ->
-                    if (isUnix()) {
-                        sh "cp ${backup} ${orig}"
-                    } else {
-                        bat "copy /Y \"${backup}\" \"${orig}\""
-                    }
+                    runCommand(
+                        "cp ${backup} ${orig}",
+                        "copy /Y \"${backup}\" \"${orig}\""
+                    )
                     echo "Restored ${orig} from ${backup}"
                 }
             }
