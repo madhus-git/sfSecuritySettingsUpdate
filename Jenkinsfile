@@ -1,158 +1,118 @@
-node {
-    try {
-        // ===============================
-        // 1️⃣ Define Input Parameters
-        // ===============================
-        properties([
-            parameters([
-                string(name: 'SETTINGS_FILE_PATTERN', defaultValue: 'Security.settings-meta.xml', description: 'Pattern for settings XML files (supports * wildcard)'),
-                string(name: 'UPDATE_KEYS', defaultValue: 'canUsersGrantLoginAccess,enableAdminLoginAsAnyUser', description: 'Comma-separated XML node names to update'),
-                string(name: 'UPDATE_VALUES', defaultValue: 'true,false', description: 'Comma-separated values for the XML nodes'),
-                string(name: 'ORG_ALIAS', defaultValue: 'devOrg', description: 'Salesforce Org alias for deployment'),
-                string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Git branch for commit')
-            ])
-        ])
+pipeline {
+    agent any
 
-        // ===============================
-        // 2️⃣ Checkout Source Code
-        // ===============================
-        stage('Checkout') {
-            checkout scm
-        }
+    parameters {
+        string(name: 'ORG_ALIAS', defaultValue: 'dev', description: 'Target Org alias (e.g., dev, sit, uat, prod)')
+        text(name: 'UPDATE_MAP', defaultValue: 'canUsersGrantLoginAccess=false\nenableAdminLoginAsAnyUser=true', description: 'XML updates in key=value format (one per line)')
+    }
 
-        // ===============================
-        // 3️⃣ Locate XML Files
-        // ===============================
-        stage('Locate XML Files') {
-            def settingsDir = new File("${env.WORKSPACE}/force-app/main/default/settings")
-            if (!settingsDir.exists()) {
-                error "Settings directory not found: ${settingsDir.absolutePath}"
-            }
+    stages {
 
-            def pattern = params.SETTINGS_FILE_PATTERN.replace(".", "\\.").replace("*", ".*")
-            xmlFiles = settingsDir.listFiles().findAll { it.name ==~ pattern }
-
-            if (xmlFiles.isEmpty()) {
-                error "No XML files found matching pattern: ${params.SETTINGS_FILE_PATTERN}"
-            }
-
-            echo "Found ${xmlFiles.size()} file(s):"
-            xmlFiles.each { echo " - ${it.name}" }
-
-            env.XML_FILE_PATHS = xmlFiles.collect { it.path }.join(';')
-        }
-
-        // ===============================
-        // 4️⃣ Backup XML Files
-        // ===============================
-        stage('Backup XML Files') {
-            xmlFiles = env.XML_FILE_PATHS.split(';').collect { new File(it) }
-            xmlFiles.each { f ->
-                def backup = new File(f.path + ".bak")
-                backup.text = f.text
-                echo "Backup created for ${f.name}"
+        stage('Checkout Source') {
+            steps {
+                echo "📦 Checking out source code..."
+                checkout scm
             }
         }
 
-        // ===============================
-        // 5️⃣ Update XML Nodes
-        // ===============================
         stage('Update XML Files') {
-            def keys = params.UPDATE_KEYS.split(',').collect { it.trim() }
-            def values = params.UPDATE_VALUES.split(',').collect { it.trim() }
-            if (keys.size() != values.size()) error "UPDATE_KEYS and UPDATE_VALUES must have same count"
+            steps {
+                script {
+                    echo "🛠 Updating XML files under force-app/main/default/settings..."
+                    def xmlDir = "force-app/main/default/settings"
 
-            def updateMap = [:]
-            keys.eachWithIndex { k, i -> updateMap[k] = values[i] }
+                    // Parse user-provided key=value pairs into a map
+                    def updateMap = [:]
+                    params.UPDATE_MAP.split("\n").each { line ->
+                        def parts = line.trim().split("=")
+                        if (parts.size() == 2) {
+                            updateMap[parts[0].trim()] = parts[1].trim()
+                        }
+                    }
 
-            xmlFiles.each { f ->
-                echo "Updating ${f.name}"
-                def xml = new XmlParser().parse(f)
+                    def files = sh(script: "ls ${xmlDir}/*.xml", returnStdout: true).trim().split("\n")
 
-                updateMap.each { k, v ->
-                    def node = xml."${k}"
-                    if (node && !node.isEmpty()) {
-                        node[0].value = v
-                        echo "✅ Updated <${k}> to '${v}'"
+                    files.each { filePath ->
+                        def content = readFile(file: filePath)
+
+                        updateMap.each { key, value ->
+                            def oldPattern = "<${key}>.*?</${key}>"
+                            def newPattern = "<${key}>${value}</${key}>"
+                            if (content =~ oldPattern) {
+                                content = content.replaceAll(oldPattern, newPattern)
+                                echo "✅ Updated '${key}' to '${value}' in ${filePath}"
+                            } else {
+                                echo "⚠️ Tag '${key}' not found in ${filePath}"
+                            }
+                        }
+
+                        writeFile(file: filePath, text: content)
+                    }
+                }
+            }
+        }
+
+        stage('Validate Updates') {
+            steps {
+                script {
+                    echo "🔍 Validating XML updates..."
+                    def xmlDir = "force-app/main/default/settings"
+                    def files = sh(script: "ls ${xmlDir}/*.xml", returnStdout: true).trim().split("\n")
+                    def failed = false
+
+                    files.each { filePath ->
+                        def content = readFile(file: filePath)
+                        params.UPDATE_MAP.split("\n").each { line ->
+                            def (key, value) = line.trim().tokenize("=")
+                            if (!content.contains("<${key}>${value}</${key}>")) {
+                                echo "❌ Validation failed for ${key} in ${filePath}"
+                                failed = true
+                            }
+                        }
+                    }
+
+                    if (failed) {
+                        error("XML validation failed — some values not updated correctly.")
                     } else {
-                        xml.appendNode(k, v)
-                        echo "🆕 Added <${k}> = '${v}'"
-                    }
-                }
-
-                // Write back
-                def writer = new FileWriter(f)
-                def printer = new XmlNodePrinter(new PrintWriter(writer))
-                printer.setPreserveWhitespace(true)
-                printer.print(xml)
-                writer.close()
-
-                // Validate
-                def xmlAfter = new XmlParser().parse(f)
-                updateMap.each { k, v ->
-                    def actual = xmlAfter."${k}" ? xmlAfter."${k}"[0].text() : null
-                    if (actual != v) {
-                        error "❌ Validation failed for ${k} in ${f.name}. Expected '${v}', found '${actual}'"
-                    }
-                }
-
-                echo "✅ Validation passed for ${f.name}"
-            }
-        }
-
-        // ===============================
-        // 6️⃣ Commit to Git
-        // ===============================
-        stage('Commit Updates') {
-            def commitCmd = """
-                git config user.email "jenkins@yourdomain.com"
-                git config user.name "Jenkins"
-                git checkout ${params.GIT_BRANCH}
-                git add force-app/main/default/settings
-                git commit -m "Updated settings XML automatically via Jenkins"
-                git push origin ${params.GIT_BRANCH}
-            """
-
-            if (isUnix()) {
-                sh commitCmd
-            } else {
-                bat commitCmd
-            }
-            echo "✅ Changes committed to Git successfully."
-        }
-
-        // ===============================
-        // 7️⃣ Deploy to Salesforce Org
-        // ===============================
-        /*stage('Deploy to Org') {
-            def deployCmd = "sf project deploy start --source-dir force-app/main/default/settings --target-org ${params.ORG_ALIAS} --ignore-conflicts --wait 10 --verbose"
-            def deployResult = isUnix() ? sh(script: deployCmd, returnStatus: true) : bat(script: deployCmd, returnStatus: true)
-            if (deployResult != 0) {
-                error "Deployment failed to ${params.ORG_ALIAS}"
-            }
-            echo "🚀 Deployment succeeded to ${params.ORG_ALIAS}"
-        }*/
-
-        echo "🎉 Pipeline completed successfully for org: ${params.ORG_ALIAS}"
-
-    } catch (err) {
-        // ===============================
-        // 8️⃣ Rollback on Failure
-        // ===============================
-        stage('Rollback Changes') {
-            echo "⚠️ Rolling back XML changes..."
-            if (env.XML_FILE_PATHS) {
-                env.XML_FILE_PATHS.split(';').each { path ->
-                    def f = new File(path)
-                    def backup = new File(path + ".bak")
-                    if (backup.exists()) {
-                        f.text = backup.text
-                        echo "Restored backup for ${f.name}"
+                        echo "✅ All XML values validated successfully."
                     }
                 }
             }
         }
-        currentBuild.result = 'FAILURE'
-        throw err
+
+        stage('Commit Changes to Git') {
+            steps {
+                script {
+                    echo "💾 Committing updated XML files..."
+                    sh '''
+                        git config user.email "jenkins@local"
+                        git config user.name "Jenkins"
+                        git add force-app/main/default/settings/*.xml
+                        git commit -m "Automated XML update via Jenkins pipeline"
+                        git push origin HEAD:main || echo "⚠️ Git push skipped (no changes or permissions issue)"
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Salesforce Org') {
+            steps {
+                script {
+                    echo "🚀 Deploying updated metadata to org: ${params.ORG_ALIAS}"
+                    sh """
+                        sf project deploy start --source-dir force-app --target-org ${params.ORG_ALIAS} --ignore-warnings --verbose
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "❌ Deployment failed. Review logs and rollback if needed."
+        }
+        success {
+            echo "🎉 Deployment completed successfully for ${params.ORG_ALIAS}!"
+        }
     }
 }
