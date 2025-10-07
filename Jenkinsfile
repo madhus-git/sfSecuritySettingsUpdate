@@ -1,131 +1,128 @@
-node {
-    try {
-        // ==================================================
-        // 1️⃣ Parameters
-        // ==================================================
-        properties([
-            parameters([
-                string(name: 'ORG_ALIAS', defaultValue: 'dev', description: 'Salesforce Org alias'),
-                text(name: 'UPDATE_MAP', defaultValue: 'canUsersGrantLoginAccess=false\nenableAdminLoginAsAnyUser=true', description: 'key=value pairs (one per line)')
-            ])
-        ])
+pipeline {
+    agent any
+    parameters {
+        string(name: 'ORG_ALIAS', defaultValue: '', description: 'Salesforce Org Alias')
+        string(name: 'XML_FILE', defaultValue: 'force-app/main/default/settings/Security.settings-meta.xml', description: 'Path to XML file')
+        text(name: 'TAGS_MAP', defaultValue: 'canUsersGrantLoginAccess=false\nenableAdminLoginAsAnyUser=true', description: 'Tags and values to update (format: tag=value, one per line)')
+    }
+    environment {
+        LOG_DIR = "deployment_logs"
+        BACKUP_DIR = "backups"
+        PACKAGE_XML = "./manifest/package.xml"
+        TEST_LEVEL = "RunLocalTests"
+        WAIT_TIME = "30"
+    }
+    stages {
 
-        // ==================================================
-        // 2️⃣ Checkout Source Code
-        // ==================================================
-        stage('Checkout') {
-            echo "📦 Checking out source code..."
-            checkout scm
-        }
-
-        // ==================================================
-        // 3️⃣ Locate XML Files
-        // ==================================================
-        stage('Locate XML Files') {
-            echo "🔍 Locating XML files under force-app/main/default/settings..."
-            def xmlDir = new File("${env.WORKSPACE}/force-app/main/default/settings")
-            if (!xmlDir.exists()) error "Settings directory not found: ${xmlDir}"
-
-            def xmlFiles = []
-            xmlDir.eachFileRecurse { file ->
-                if (file.name.endsWith(".xml")) {
-                    xmlFiles << file
-                }
-            }
-
-            if (xmlFiles.isEmpty()) error "No XML files found in ${xmlDir}"
-            env.XML_FILE_PATHS = xmlFiles.collect { it.path }.join(';')
-            echo "Found ${xmlFiles.size()} XML file(s)."
-        }
-
-        // ==================================================
-        // 4️⃣ Update XML Files
-        // ==================================================
-        stage('Update XML Files') {
-            echo "🛠 Updating XML files..."
-
-            def keysValues = [:]
-            params.UPDATE_MAP.split("\n").each { line ->
-                def parts = line.trim().split("=")
-                if (parts.size() == 2) keysValues[parts[0].trim()] = parts[1].trim()
-            }
-
-            def xmlFiles = env.XML_FILE_PATHS.split(';').collect { new File(it) }
-
-            xmlFiles.each { file ->
-                echo "Updating file: ${file.path}"
-                def xml = new XmlParser().parse(file)
-
-                keysValues.each { key, value ->
-                    def node = xml."${key}"
-                    if (node) {
-                        node[0].value = value
-                        echo "✅ Updated ${key} -> ${value}"
-                    } else {
-                        xml.appendNode(key, value)
-                        echo "⚠️ Added missing node ${key} -> ${value}"
+        stage('Prepare') {
+            steps {
+                script {
+                    echo "[STEP] Creating log directory..."
+                    if (!fileExists(env.LOG_DIR)) {
+                        sh "mkdir -p ${env.LOG_DIR}"
                     }
-                }
 
-                // Write XML back
-                def writer = new FileWriter(file)
-                def printer = new XmlNodePrinter(new PrintWriter(writer))
-                printer.setPreserveWhitespace(true)
-                printer.print(xml)
-                writer.close()
+                    echo "[STEP] Creating backup directory..."
+                    BACKUP_FOLDER = "${env.BACKUP_DIR}/${new Date().format('yyyyMMdd_HHmm')}"
+                    sh "mkdir -p ${BACKUP_FOLDER}"
+                }
             }
         }
 
-        // ==================================================
-        // 5️⃣ Validate Updates
-        // ==================================================
-        stage('Validate Updates') {
-            echo "🔍 Validating XML updates..."
-            def xmlFiles = env.XML_FILE_PATHS.split(';').collect { new File(it) }
-            def failed = false
+        stage('Backup XML') {
+            steps {
+                script {
+                    echo "[STEP] Backing up XML file: ${params.XML_FILE}"
+                    BACKUP_FILE = "${params.XML_FILE}.bak_${new Date().format('yyyyMMdd_HHmmss')}"
+                    sh "cp ${params.XML_FILE} ${BACKUP_FILE}"
+                    echo "Backup created at: ${BACKUP_FILE}"
+                }
+            }
+        }
 
-            xmlFiles.each { file ->
-                def xml = new XmlParser().parse(file)
-                params.UPDATE_MAP.split("\n").each { line ->
-                    def (key, value) = line.trim().tokenize("=")
-                    def nodeValue = xml."${key}" ? xml."${key}"[0].text() : null
-                    if (nodeValue != value) {
-                        echo "❌ Validation failed for ${key} in ${file.path}. Expected: ${value}, Found: ${nodeValue}"
-                        failed = true
+        stage('Update XML') {
+            steps {
+                script {
+                    echo "[STEP] Updating XML..."
+                    
+                    // Parse tags map
+                    def tags = [:]
+                    params.TAGS_MAP.split("\n").each { line ->
+                        if (line.trim()) {
+                            def (key, value) = line.trim().split('=')
+                            tags[key] = value
+                        }
                     }
+
+                    // Update XML using PowerShell
+                    def psScript = """
+                        [xml]\$xml = Get-Content "${params.XML_FILE}"
+                        \$nsMgr = New-Object System.Xml.XmlNamespaceManager(\$xml.NameTable)
+                        \$nsMgr.AddNamespace("ns", \$xml.DocumentElement.NamespaceURI)
+
+                        ${tags.collect { key, value -> "\$xml.SelectSingleNode(\"//ns:${key}\", \$nsMgr).InnerText = '${value}'" }.join("\n")}
+
+                        # Save updated XML
+                        \$xml.Save("${params.XML_FILE}")
+                    """
+                    powershell(returnStatus: true, script: psScript)
+                    echo "XML updated successfully"
                 }
             }
-
-            if (failed) error "❌ XML validation failed!"
-            echo "✅ All XML updates validated successfully."
         }
 
-        // ==================================================
-        // 6️⃣ Commit Updates to Git
-        // ==================================================
-        stage('Commit to Git') {
-            echo "💾 Committing updates to Git..."
-            def xmlFiles = env.XML_FILE_PATHS.split(';').collect { it.path }.join(' ')
-            sh "git config user.email 'jenkins@local'"
-            sh "git config user.name 'Jenkins'"
-            sh "git add ${xmlFiles}"
-            sh "git commit -m 'Automated XML update via Jenkins pipeline' || echo '⚠️ No changes to commit'"
-            sh "git push origin HEAD:main || echo '⚠️ Push skipped'"
+        stage('Validate Changes') {
+            steps {
+                script {
+                    echo "[STEP] Validating XML..."
+                    
+                    def validationScript = """
+                        [xml]\$xml = Get-Content "${params.XML_FILE}"
+                        \$nsMgr = New-Object System.Xml.XmlNamespaceManager(\$xml.NameTable)
+                        \$nsMgr.AddNamespace("ns", \$xml.DocumentElement.NamespaceURI)
+                        \$valid = \$true
+                        ${tags.collect { key, value -> "if (\$xml.SelectSingleNode(\"//ns:${key}\", \$nsMgr).InnerText -ne '${value}') { \$valid = \$false }" }.join("\n")}
+                        if (-not \$valid) { exit 1 }
+                    """
+                    powershell(returnStatus: true, script: validationScript)
+                    echo "Validation passed!"
+                }
+            }
         }
 
-        // ==================================================
-        // 7️⃣ Deploy to Salesforce Org
-        // ==================================================
-        stage('Deploy to Salesforce Org') {
-            echo "🚀 Deploying to Salesforce Org: ${params.ORG_ALIAS}"
-            sh "sf project deploy start --source-dir force-app --target-org ${params.ORG_ALIAS} --ignore-warnings --verbose"
+        stage('Deploy to Salesforce') {
+            steps {
+                script {
+                    echo "[STEP] Deploying to org: ${params.ORG_ALIAS}"
+                    sh """
+                        chcp 65001
+                        sf deploy metadata --manifest ${env.PACKAGE_XML} --target-org ${params.ORG_ALIAS} --test-level ${env.TEST_LEVEL} --wait ${env.WAIT_TIME} --json > ${env.LOG_DIR}/deploy_${new Date().format('yyyyMMdd_HHmmss')}.json
+                    """
+                }
+            }
         }
 
-        echo "🎉 Pipeline completed successfully for org: ${params.ORG_ALIAS}"
+        stage('Push Changes to GitHub') {
+            steps {
+                script {
+                    echo "[STEP] Pushing updated XML to GitHub..."
+                    sh """
+                        git config user.email "jenkins@example.com"
+                        git config user.name "Jenkins CI"
+                        git add ${params.XML_FILE}
+                        git commit -m "Updated ${params.XML_FILE} tags: ${tags.keySet().join(', ')}"
+                        git push origin HEAD
+                    """
+                    echo "Changes pushed to GitHub."
+                }
+            }
+        }
+    }
 
-    } catch (err) {
-        echo "❌ Pipeline failed: ${err.message}"
-        currentBuild.result = 'FAILURE'
-        throw err
+    post {
+        failure {
+            echo "Pipeline failed. Restoring backup..."
+            sh "cp ${BACKUP_FILE} ${params.XML_FILE}"
+        }
     }
 }
