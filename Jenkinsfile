@@ -42,6 +42,8 @@ node {
         if (isUnix()) {
             sh cmdUnix
         } else {
+            // Convert forward slashes to backslashes for Windows
+            cmdWin = cmdWin.replaceAll('/', '\\\\')
             bat cmdWin
         }
     }
