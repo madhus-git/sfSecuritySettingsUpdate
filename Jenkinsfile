@@ -150,22 +150,22 @@ node {
 
             // Retrieve credentials securely
             withCredentials([
-                string(credentialsId: 'SF_CLIENT_ID', variable: 'SF_CLIENT_ID'),
-                file(credentialsId: 'SF_JWT_KEY_FILE', variable: 'SF_JWT_KEY_FILE')
+                string(credentialsId: 'sfdc-consumer-key', variable: 'CONNECTED_APP_CONSUMER_KEY'),
+                file(credentialsId: 'sfdc-jwt-key', variable: 'JWT_KEY_FILE')
             ]) {
                 if (isUnix()) {
                     sh """
                         sf auth:jwt:grant \
-                            --client-id ${SF_CLIENT_ID} \
-                            --jwt-key-file ${SF_JWT_KEY_FILE} \
+                            --client-id ${CONNECTED_APP_CONSUMER_KEY} \
+                            --jwt-key-file ${JWT_KEY_FILE} \
                             --username ${ORG_ALIAS} \
                             --set-default-dev-hub
                     """
                 } else {
                     bat """
                         sf auth:jwt:grant ^
-                            --client-id ${SF_CLIENT_ID} ^
-                            --jwt-key-file ${SF_JWT_KEY_FILE} ^
+                            --client-id ${CONNECTED_APP_CONSUMER_KEY} ^
+                            --jwt-key-file ${JWT_KEY_FILE} ^
                             --username ${ORG_ALIAS} ^
                             --set-default-dev-hub
                     """
