@@ -1,5 +1,3 @@
-@Library('pipeline-utility-steps') _
-
 node {
     // -------------------------------
     // 0️⃣ Checkout repository
@@ -97,6 +95,7 @@ node {
                 copyFile(file, backupFile)
                 echo "Backup created: ${backupFile}"
             }
+            // Store JSON as String for CPS-safe cross-stage usage
             backupFilesJson = groovy.json.JsonOutput.toJson(backupFilesMap)
             env.BACKUP_FILES = backupFilesJson
         }
@@ -162,7 +161,6 @@ node {
             echo "[STEP] Deploying to org: ${orgAlias}"
             def deployLog = "${logDir}/deploy_${timestamp}.json"
 
-            // Use returnStatus to prevent CPS thread errors
             def exitCode = isUnix() ?
                 sh(script: "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}", returnStatus: true)
                 :
@@ -208,7 +206,7 @@ node {
         stage('Rollback') {
             echo "[ROLLBACK] Restoring backups..."
             if(env.BACKUP_FILES) {
-                def backups = readJSON text: env.BACKUP_FILES
+                def backups = new groovy.json.JsonSlurper().parseText(env.BACKUP_FILES)
                 backups.each { orig, backup ->
                     copyFile(backup, orig)
                     echo "Restored ${orig} from ${backup}"
