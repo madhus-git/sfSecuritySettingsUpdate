@@ -38,13 +38,17 @@ node {
         return map
     }
 
-    def runCommand = { cmdUnix, cmdWin ->
+    // -------------------------------
+    // Robust cross-platform copy helper
+    // -------------------------------
+    def copyFile = { src, dest ->
         if (isUnix()) {
-            sh cmdUnix
+            sh "cp '${src}' '${dest}'"
         } else {
-            // Convert forward slashes to backslashes for Windows
-            cmdWin = cmdWin.replaceAll('/', '\\\\')
-            bat cmdWin
+            // Only convert file paths, keep /Y intact
+            src = src.replace('/', '\\')
+            dest = dest.replace('/', '\\')
+            bat "copy /Y \"${src}\" \"${dest}\""
         }
     }
 
@@ -54,10 +58,14 @@ node {
         // -------------------------------
         stage('Prepare') {
             echo "[STEP] Creating log and backup directories..."
-            runCommand("mkdir -p ${logDir} ${backupDir}", """
+            if (isUnix()) {
+                sh "mkdir -p ${logDir} ${backupDir}"
+            } else {
+                bat """
                 if not exist "${logDir}" mkdir "${logDir}"
                 if not exist "${backupDir}" mkdir "${backupDir}"
-            """)
+                """
+            }
         }
 
         // -------------------------------
@@ -67,10 +75,11 @@ node {
             echo "[STEP] Validating XML file paths..."
             xmlFilesInput.split(",").each { file ->
                 file = file.trim()
-                runCommand(
-                    "test -f ${file} || (echo File not found: ${file} && exit 1)",
-                    "if not exist \"${file}\" (echo File not found: ${file} & exit 1)"
-                )
+                if (isUnix()) {
+                    sh "test -f '${file}' || (echo File not found: ${file} && exit 1)"
+                } else {
+                    bat "if not exist \"${file}\" (echo File not found: ${file} & exit 1)"
+                }
                 echo "Found XML file: ${file}"
             }
         }
@@ -85,11 +94,7 @@ node {
                 def backupFile = "${file}.bak_${timestamp}"
                 backupFiles[file] = backupFile
 
-                runCommand(
-                    "cp ${file} ${backupFile}",
-                    "copy /Y \"${file}\" \"${backupFile}\""
-                )
-
+                copyFile(file, backupFile)
                 echo "Backup created: ${backupFile}"
             }
             // Save backupFiles to env for rollback
@@ -156,10 +161,11 @@ node {
         stage('Deploy to Salesforce') {
             echo "[STEP] Deploying to org: ${orgAlias}"
             def deployLog = "${logDir}/deploy_${timestamp}.json"
-            runCommand(
-                "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}",
-                "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}"
-            )
+            if (isUnix()) {
+                sh "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}"
+            } else {
+                bat "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}"
+            }
             echo "Deployment completed. Log: ${deployLog}"
         }
 
@@ -168,22 +174,24 @@ node {
         // -------------------------------
         stage('Push to GitHub') {
             echo "[STEP] Pushing updated XML files to GitHub..."
-            runCommand(
-                "git config user.email 'jenkins@example.com' && git config user.name 'Jenkins CI'",
-                "git config user.email 'jenkins@example.com' & git config user.name 'Jenkins CI'"
-            )
+            if (isUnix()) {
+                sh "git config user.email 'jenkins@example.com' && git config user.name 'Jenkins CI'"
+            } else {
+                bat "git config user.email 'jenkins@example.com' & git config user.name 'Jenkins CI'"
+            }
 
             xmlFilesInput.split(",").each { file ->
                 file = file.trim()
-                runCommand("git add ${file}", "git add \"${file}\"")
+                if (isUnix()) { sh "git add ${file}" } else { bat "git add \"${file}\"" }
             }
 
-            runCommand(
-                "git commit -m 'Updated XML files' || echo 'No changes to commit'",
-                "git commit -m \"Updated XML files\" || echo No changes to commit"
-            )
-
-            runCommand("git push origin HEAD", "git push origin HEAD")
+            if (isUnix()) {
+                sh "git commit -m 'Updated XML files' || echo 'No changes to commit'"
+                sh "git push origin HEAD"
+            } else {
+                bat "git commit -m \"Updated XML files\" || echo No changes to commit"
+                bat "git push origin HEAD"
+            }
             echo "Changes pushed to GitHub successfully."
         }
 
@@ -196,10 +204,7 @@ node {
             echo "[ROLLBACK] Restoring backups..."
             backupFiles = new groovy.json.JsonSlurperClassic().parseText(env.BACKUP_FILES)
             backupFiles.each { orig, backup ->
-                runCommand(
-                    "cp ${backup} ${orig}",
-                    "copy /Y \"${backup}\" \"${orig}\""
-                )
+                copyFile(backup, orig)
                 echo "Restored ${orig} from ${backup}"
             }
         } else {
