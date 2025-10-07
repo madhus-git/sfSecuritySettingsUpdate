@@ -1,220 +1,121 @@
 node {
-    // -------------------------------
-    // 0️⃣ Checkout repository
-    // -------------------------------
-    stage('Checkout') {
-        echo "[STEP] Checking out repository..."
-        checkout scm
-    }
 
     // -------------------------------
-    // 1️⃣ Parameters
+    // Parameters
     // -------------------------------
-    def orgAlias = params.ORG_ALIAS
-    def xmlFilesInput = params.XML_FILES        // Comma-separated XML files
-    def tagsInput = params.TAGS_MAP             // Format: filePath:tag1=value1,tag2=value2 per line
-
-    if (!orgAlias || !xmlFilesInput || !tagsInput) {
-        error "Please provide ORG_ALIAS, XML_FILES, and TAGS_MAP as build parameters"
-    }
-
-    def logDir = "deployment_logs"
-    def backupDir = "backups"
-    def packageXml = "./manifest/package.xml"
-    def waitTime = 30
-    def testLevel = "RunLocalTests"
-    def timestamp = new Date().format('yyyyMMdd_HHmmss')
-
-    // -------------------------------
-    // Helper Functions
-    // -------------------------------
-    def parseTags = { tagsStr ->
-        def map = [:]
-        tagsStr.split(",").each { kv ->
-            def pair = kv.trim().split("=")
-            if(pair.size() == 2) { map[pair[0]] = pair[1] }
-        }
-        return map
-    }
-
-    def copyFile = { src, dest ->
-        if (isUnix()) {
-            sh "cp '${src}' '${dest}'"
-        } else {
-            src = src.replace('/', '\\')
-            dest = dest.replace('/', '\\')
-            bat "copy /Y \"${src}\" \"${dest}\""
-        }
-    }
-
-    // Track backup file paths (store as JSON string for CPS safety)
-    def backupFilesJson = "{}"
+    def ORG_ALIAS = params.OrgAlias ?: ''
+    def XML_PATH = params.XMLFilePath ?: ''
+    def TAG_NAME = params.TagName ?: ''
+    def TAG_VALUE = params.TagValue ?: ''
+    def GIT_BRANCH = params.BranchName ?: 'main'
+    def BACKUP_DIR = "backup_${env.BUILD_ID}"
 
     try {
-        // -------------------------------
-        // 2️⃣ Prepare directories
-        // -------------------------------
-        stage('Prepare') {
-            echo "[STEP] Creating log and backup directories..."
+
+        stage('Checkout Code') {
+            echo "Checking out code..."
+            checkout scm
+        }
+
+        stage('Create Backup Folder and Backup Retrieved Settings') {
+            echo "Creating backup folder: ${BACKUP_DIR}"
             if (isUnix()) {
-                sh "mkdir -p ${logDir} ${backupDir}"
+                sh "mkdir -p ${BACKUP_DIR}"
+                sh "cp ${XML_PATH} ${BACKUP_DIR}/"
+            } else {
+                bat "mkdir ${BACKUP_DIR}"
+                bat "copy ${XML_PATH} ${BACKUP_DIR}\\"
+            }
+        }
+
+        stage('Validate XML Path') {
+            echo "Validating XML path..."
+            def fileExists = false
+            if (isUnix()) {
+                fileExists = sh(script: "test -f ${XML_PATH} && echo true || echo false", returnStdout: true).trim() == "true"
+            } else {
+                fileExists = bat(script: "if exist ${XML_PATH} (echo true) else (echo false)", returnStdout: true).trim() == "true"
+            }
+
+            if (!fileExists) {
+                error "XML file not found at path: ${XML_PATH}"
+            }
+            echo "XML path validated: ${XML_PATH}"
+        }
+
+        stage('Update Security Settings') {
+            echo "Updating tag <${TAG_NAME}> in XML to value: ${TAG_VALUE}"
+            def xmlContent = readFile(XML_PATH)
+            def pattern = /<${TAG_NAME}>.*?<\/${TAG_NAME}>/
+            if (!xmlContent =~ pattern) {
+                error "Tag <${TAG_NAME}> not found in XML"
+            }
+            xmlContent = xmlContent.replaceAll(pattern, "<${TAG_NAME}>${TAG_VALUE}</${TAG_NAME}>")
+            writeFile(file: XML_PATH, text: xmlContent)
+        }
+
+        stage('Detect Changes in XML') {
+            echo "Checking for changes..."
+            def diffOutput = ""
+            if (isUnix()) {
+                diffOutput = sh(script: "diff ${BACKUP_DIR}/${XML_PATH.tokenize('/').last()} ${XML_PATH} || true", returnStdout: true).trim()
+            } else {
+                diffOutput = bat(script: "fc ${BACKUP_DIR}\\${XML_PATH.tokenize('\\/').last()} ${XML_PATH}", returnStdout: true).trim()
+            }
+
+            if (!diffOutput) {
+                echo "No changes detected. Skipping Git push and deployment."
+                currentBuild.result = 'SUCCESS'
+                return
+            }
+            echo "Changes detected."
+        }
+
+        stage('Validate Updated Values') {
+            echo "Validating updated XML values..."
+            def xmlContent = readFile(XML_PATH)
+            if (!xmlContent.contains("<${TAG_NAME}>${TAG_VALUE}</${TAG_NAME}>")) {
+                error "Validation failed: Tag <${TAG_NAME}> was not updated correctly"
+            }
+            echo "Validation passed."
+        }
+
+        stage('Push Changes to GitHub') {
+            echo "Committing and pushing changes to GitHub..."
+            if (isUnix()) {
+                sh """
+                    git config user.email "jenkins@example.com"
+                    git config user.name "Jenkins CI"
+                    git add ${XML_PATH}
+                    git commit -m "Updated <${TAG_NAME}> to ${TAG_VALUE} via Jenkins build #${env.BUILD_ID}" || echo "No changes to commit"
+                    git push origin ${GIT_BRANCH}
+                """
             } else {
                 bat """
-                if not exist "${logDir}" mkdir "${logDir}"
-                if not exist "${backupDir}" mkdir "${backupDir}"
+                    git add ${XML_PATH}
+                    git commit -m "Updated <${TAG_NAME}> to ${TAG_VALUE} via Jenkins build #${env.BUILD_ID}" || echo No changes to commit
+                    git push origin ${GIT_BRANCH}
                 """
             }
         }
 
-        // -------------------------------
-        // 3️⃣ Validate XML files exist
-        // -------------------------------
-        stage('Validate XML Paths') {
-            echo "[STEP] Validating XML file paths..."
-            xmlFilesInput.split(",").each { file ->
-                file = file.trim()
-                if (isUnix()) {
-                    sh "test -f '${file}' || (echo File not found: ${file} && exit 1)"
-                } else {
-                    bat "if not exist \"${file}\" (echo File not found: ${file} & exit 1)"
-                }
-                echo "Found XML file: ${file}"
-            }
-        }
-
-        // -------------------------------
-        // 4️⃣ Backup XML files
-        // -------------------------------
-        stage('Backup XML') {
-            echo "[STEP] Backing up XML files..."
-            def backupFilesMap = [:]
-            xmlFilesInput.split(",").each { file ->
-                file = file.trim()
-                def backupFile = "${file}.bak_${timestamp}"
-                backupFilesMap[file] = backupFile
-                copyFile(file, backupFile)
-                echo "Backup created: ${backupFile}"
-            }
-            // Store JSON as String for CPS-safe cross-stage usage
-            backupFilesJson = groovy.json.JsonOutput.toJson(backupFilesMap)
-            env.BACKUP_FILES = backupFilesJson
-        }
-
-        // -------------------------------
-        // 5️⃣ Update XML files
-        // -------------------------------
-        stage('Update XML') {
-            echo "[STEP] Updating XML files..."
-            tagsInput.split("\n").each { line ->
-                if(line.trim()) {
-                    def parts = line.split(":")
-                    if(parts.size() != 2) { error "Invalid format in TAGS_MAP: ${line}" }
-                    def xmlFile = parts[0].trim()
-                    def tags = parseTags(parts[1].trim())
-
-                    echo "Updating ${xmlFile} with tags: ${tags}"
-
-                    def psScript = """
-                        [xml]\$xml = Get-Content "${xmlFile}"
-                        \$nsMgr = New-Object System.Xml.XmlNamespaceManager(\$xml.NameTable)
-                        \$nsMgr.AddNamespace("ns", \$xml.DocumentElement.NamespaceURI)
-                        ${tags.collect { k,v -> "\$xml.SelectSingleNode(\"//ns:${k}\", \$nsMgr).InnerText = '${v}'" }.join("\n")}
-                        \$xml.Save("${xmlFile}")
-                    """
-
-                    powershell(returnStatus: true, script: psScript)
-                }
-            }
-            echo "XML files updated successfully."
-        }
-
-        // -------------------------------
-        // 6️⃣ Validate updated XML values
-        // -------------------------------
-        stage('Validate Changes') {
-            echo "[STEP] Validating XML updates..."
-            tagsInput.split("\n").each { line ->
-                if(line.trim()) {
-                    def parts = line.split(":")
-                    def xmlFile = parts[0].trim()
-                    def tags = parseTags(parts[1].trim())
-
-                    def validationScript = """
-                        [xml]\$xml = Get-Content "${xmlFile}"
-                        \$nsMgr = New-Object System.Xml.XmlNamespaceManager(\$xml.NameTable)
-                        \$nsMgr.AddNamespace("ns", \$xml.DocumentElement.NamespaceURI)
-                        \$valid = \$true
-                        ${tags.collect { k,v -> "if (\$xml.SelectSingleNode(\"//ns:${k}\", \$nsMgr).InnerText -ne '${v}') { \$valid = \$false }" }.join("\n")}
-                        if (-not \$valid) { exit 1 }
-                    """
-
-                    powershell(returnStatus: true, script: validationScript)
-                }
-            }
-            echo "Validation passed for all XML files."
-        }
-
-        // -------------------------------
-        // 7️⃣ Deploy to Salesforce
-        // -------------------------------
-        stage('Deploy to Salesforce') {
-            echo "[STEP] Deploying to org: ${orgAlias}"
-            def deployLog = "${logDir}/deploy_${timestamp}.json"
-
-            def exitCode = isUnix() ?
-                sh(script: "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}", returnStatus: true)
-                :
-                bat(script: "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}", returnStatus: true)
-
-            if(exitCode != 0) {
-                error "[FAILURE] Salesforce deployment failed. Check ${deployLog}"
-            }
-            echo "Deployment completed. Log: ${deployLog}"
-        }
-
-        // -------------------------------
-        // 8️⃣ Push updated XML files to GitHub
-        // -------------------------------
-        stage('Push to GitHub') {
-            echo "[STEP] Pushing updated XML files to GitHub..."
+        stage('Deploy to Salesforce Org') {
+            echo "Deploying to Salesforce Org: ${ORG_ALIAS}"
             if (isUnix()) {
-                sh "git config user.email 'jenkins@example.com' && git config user.name 'Jenkins CI'"
+                sh "sf deploy metadata --target-org ${ORG_ALIAS} --manifest ./manifest/package.xml"
             } else {
-                bat "git config user.email 'jenkins@example.com' & git config user.name 'Jenkins CI'"
+                bat "sf deploy metadata --target-org ${ORG_ALIAS} --manifest .\\manifest\\package.xml"
             }
-
-            xmlFilesInput.split(",").each { file ->
-                file = file.trim()
-                if (isUnix()) { sh "git add ${file}" } else { bat "git add \"${file}\"" }
-            }
-
-            if (isUnix()) {
-                sh "git commit -m 'Updated XML files' || echo 'No changes to commit'"
-                sh "git push origin HEAD"
-            } else {
-                bat "git commit -m \"Updated XML files\" || echo No changes to commit"
-                bat "git push origin HEAD"
-            }
-            echo "Changes pushed to GitHub successfully."
         }
 
     } catch (err) {
-        // -------------------------------
-        // Rollback on failure
-        // -------------------------------
-        echo "[FAILURE] ${err}"
-        stage('Rollback') {
-            echo "[ROLLBACK] Restoring backups..."
-            if(env.BACKUP_FILES) {
-                def backups = new groovy.json.JsonSlurper().parseText(env.BACKUP_FILES)
-                backups.each { orig, backup ->
-                    copyFile(backup, orig)
-                    echo "Restored ${orig} from ${backup}"
-                }
-            } else {
-                echo "[ROLLBACK] No backups to restore"
-            }
+        echo "Error encountered: ${err}"
+        currentBuild.result = 'FAILURE'
+        throw err
+    } finally {
+        stage('Clean Workspace') {
+            echo "Cleaning workspace..."
+            cleanWs()
         }
-        error "Pipeline failed and rollback completed"
     }
 }
