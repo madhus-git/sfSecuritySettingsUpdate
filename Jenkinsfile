@@ -137,8 +137,6 @@ node {
                 """
             } else {
                 bat """
-                    git config user.email "jenkins@example.com"
-                    git config user.name "Jenkins CI"
                     git checkout -B ${GIT_BRANCH}
                     git add "${XML_PATH}"
                     git commit -m "Updated <${TAG_NAME}> to ${TAG_VALUE} via Jenkins build #${env.BUILD_ID}" || echo No changes to commit
