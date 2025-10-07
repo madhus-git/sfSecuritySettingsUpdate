@@ -1,5 +1,5 @@
 // ================================
-// Scripted Jenkins Pipeline
+// Scripted Jenkins Pipeline (Multi-Platform Safe)
 // ================================
 node {
 
@@ -19,22 +19,24 @@ node {
     // -------------------------------
     // Initialize Variables
     // -------------------------------
-    def ORG_ALIAS = params.OrgAlias ?: ''
-    def XML_PATH = params.XMLFilePath ?: ''
-    def TAG_NAME = params.TagName ?: ''
-    def TAG_VALUE = params.TagValue ?: ''
-    def GIT_BRANCH = params.BranchName ?: 'devOrg'
+    def ORG_ALIAS = params.OrgAlias?.trim()
+    def XML_PATH = params.XMLFilePath?.trim()
+    def TAG_NAME = params.TagName?.trim()
+    def TAG_VALUE = params.TagValue?.trim()
+    def GIT_BRANCH = params.BranchName?.trim() ?: 'devOrg'
     def BACKUP_DIR = "backup_${env.BUILD_ID}"
+    def xmlFileName = XML_PATH.tokenize('\\\\/').last()
+    def backupFile = "${BACKUP_DIR}/${xmlFileName}"
 
     try {
 
         // -------------------------------
         // Early Parameter Validation
         // -------------------------------
-        if (!ORG_ALIAS?.trim()) { error "OrgAlias parameter is empty." }
-        if (!XML_PATH?.trim()) { error "XMLFilePath parameter is empty." }
-        if (!TAG_NAME?.trim()) { error "TagName parameter is empty." }
-        if (!TAG_VALUE?.trim()) { error "TagValue parameter is empty." }
+        if (!ORG_ALIAS) { error "OrgAlias parameter is empty." }
+        if (!XML_PATH) { error "XMLFilePath parameter is empty." }
+        if (!TAG_NAME) { error "TagName parameter is empty." }
+        if (!TAG_VALUE) { error "TagValue parameter is empty." }
 
         stage('Checkout Code') {
             echo "Checking out code..."
@@ -45,12 +47,12 @@ node {
             echo "Creating backup folder: ${BACKUP_DIR}"
             if (isUnix()) {
                 sh "mkdir -p \"${BACKUP_DIR}\""
-                sh "cp \"${XML_PATH}\" \"${BACKUP_DIR}/\""
+                sh "cp \"${XML_PATH}\" \"${backupFile}\""
             } else {
-                bat "mkdir \"${BACKUP_DIR}\""
                 bat """
+                    mkdir "${BACKUP_DIR}"
                     if exist "${XML_PATH}" (
-                        xcopy "${XML_PATH}" "${BACKUP_DIR}\\\" /Y /I
+                        xcopy "${XML_PATH}" "${backupFile}" /Y /I
                     ) else (
                         echo XML file not found: ${XML_PATH}
                         exit /b 1
@@ -67,10 +69,7 @@ node {
             } else {
                 fileExists = bat(script: "if exist \"${XML_PATH}\" (echo true) else (echo false)", returnStdout: true).trim().toLowerCase().contains("true")
             }
-
-            if (!fileExists) {
-                error "XML file not found at path: ${XML_PATH}"
-            }
+            if (!fileExists) { error "XML file not found at path: ${XML_PATH}" }
             echo "XML path validated: ${XML_PATH}"
         }
 
@@ -78,28 +77,33 @@ node {
             echo "Updating tag <${TAG_NAME}> in XML to value: ${TAG_VALUE}"
             def xmlContent = readFile(XML_PATH)
             def pattern = /<${TAG_NAME}>.*?<\/${TAG_NAME}>/
-            if (!(xmlContent =~ pattern)) {
-                error "Tag <${TAG_NAME}> not found in XML"
-            }
+            if (!(xmlContent =~ pattern)) { error "Tag <${TAG_NAME}> not found in XML" }
             xmlContent = xmlContent.replaceAll(pattern, "<${TAG_NAME}>${TAG_VALUE}</${TAG_NAME}>")
             writeFile(file: XML_PATH, text: xmlContent)
         }
 
         stage('Detect Changes in XML') {
             echo "Checking for changes..."
-            def diffOutput = ""
-            def fileName = XML_PATH.tokenize('/').last()
             if (isUnix()) {
-                diffOutput = sh(script: "diff \"${BACKUP_DIR}/${fileName}\" \"${XML_PATH}\" || true", returnStdout: true).trim()
+                def diffOutput = sh(script: "diff \"${backupFile}\" \"${XML_PATH}\" || true", returnStdout: true).trim()
+                if (!diffOutput) {
+                    echo "No changes detected. Skipping Git push and deployment."
+                    currentBuild.result = 'SUCCESS'
+                    return
+                }
             } else {
-                fileName = XML_PATH.tokenize('\\\\/').last()
-                diffOutput = bat(script: "fc \"${BACKUP_DIR}\\${fileName}\" \"${XML_PATH}\"", returnStdout: true).trim()
-            }
-
-            if (!diffOutput) {
-                echo "No changes detected. Skipping Git push and deployment."
-                currentBuild.result = 'SUCCESS'
-                return
+                bat """
+                    if not exist "${backupFile}" (
+                        echo Backup file not found: ${backupFile}
+                        exit /b 1
+                    )
+                """
+                def diffOutput = bat(script: "fc \"${backupFile}\" \"${XML_PATH}\"", returnStdout: true).trim()
+                if (!diffOutput) {
+                    echo "No changes detected. Skipping Git push and deployment."
+                    currentBuild.result = 'SUCCESS'
+                    return
+                }
             }
             echo "Changes detected."
         }
