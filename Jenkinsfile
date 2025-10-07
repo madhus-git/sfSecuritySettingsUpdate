@@ -1,8 +1,8 @@
 node {
     try {
-        // ===============================
-        // 1️⃣ Define build parameters
-        // ===============================
+        // ========================================================
+        // 1️⃣ Define Build Parameters
+        // ========================================================
         properties([
             parameters([
                 string(name: 'SETTINGS_FILE_PATTERN', defaultValue: 'Security.settings-meta.xml', description: 'Settings XML file pattern (supports * wildcard)'),
@@ -13,16 +13,16 @@ node {
             ])
         ])
 
-        // ===============================
-        // 2️⃣ Checkout the code
-        // ===============================
+        // ========================================================
+        // 2️⃣ Checkout Code
+        // ========================================================
         stage('Checkout') {
             checkout scm
         }
 
-        // ===============================
+        // ========================================================
         // 3️⃣ Locate XML Files
-        // ===============================
+        // ========================================================
         stage('Locate XML Files') {
             def settingsDir = new File("${env.WORKSPACE}/force-app/main/default/settings")
             if (!settingsDir.exists()) error "Settings directory not found: ${settingsDir}"
@@ -30,47 +30,47 @@ node {
             def patternRegex = params.SETTINGS_FILE_PATTERN.replace(".", "\\.").replace("*", ".*")
             xmlFiles = settingsDir.listFiles().findAll { it.name ==~ patternRegex }
 
-            if (xmlFiles.size() == 0) error "No files found for pattern: ${params.SETTINGS_FILE_PATTERN}"
+            if (xmlFiles.isEmpty()) error "No files found for pattern: ${params.SETTINGS_FILE_PATTERN}"
 
             env.XML_FILE_PATHS = xmlFiles.collect { it.path }.join(';')
             echo "Found ${xmlFiles.size()} file(s) to update."
         }
 
-        // ===============================
-        // 4️⃣ Backup original files
-        // ===============================
+        // ========================================================
+        // 4️⃣ Backup Original Files
+        // ========================================================
         stage('Backup XML Files') {
             xmlFiles = env.XML_FILE_PATHS.split(';').collect { new File(it) }
             xmlFiles.each { f ->
                 def backupFile = new File(f.path + ".bak")
                 backupFile.text = f.text
-                println "Backup created: ${backupFile.path}"
+                echo "Backup created: ${backupFile.path}"
             }
         }
 
-        // ===============================
+        // ========================================================
         // 5️⃣ Update XML Files
-        // ===============================
+        // ========================================================
         stage('Update XML') {
             def keys = params.UPDATE_KEYS.split(',')
             def values = params.UPDATE_VALUES.split(',')
-            if (keys.size() != values.size()) error "UPDATE_KEYS and UPDATE_VALUES must have same number of items"
+            if (keys.size() != values.size()) error "UPDATE_KEYS and UPDATE_VALUES count mismatch"
 
             def updateMap = [:]
-            keys.eachWithIndex { k, i -> updateMap[k] = values[i] }
+            keys.eachWithIndex { k, i -> updateMap[k.trim()] = values[i].trim() }
 
             xmlFiles.each { f ->
-                println "Updating XML file: ${f.path}"
+                echo "Updating XML file: ${f.path}"
                 def xml = new XmlParser().parse(f)
 
                 updateMap.each { k, v ->
                     def node = xml."${k}"
-                    if (node) {
+                    if (node && !node.isEmpty()) {
                         node[0].value = v
-                        println "Updated ${k} -> ${v}"
+                        echo "Updated ${k} -> ${v}"
                     } else {
                         xml.appendNode(k, v)
-                        println "Added node ${k} -> ${v}"
+                        echo "Added node ${k} -> ${v}"
                     }
                 }
 
@@ -83,52 +83,60 @@ node {
 
                 // Validation
                 def xmlAfter = new XmlParser().parse(f)
-                keys.each { k ->
-                    def nodeValue = xmlAfter."${k}" ? xmlAfter."${k}"[0].text() : null
-                    if (nodeValue != updateMap[k]) error "Validation failed for ${k} in ${f.path}. Expected: ${updateMap[k]}, Found: ${nodeValue}"
+                updateMap.each { k, v ->
+                    def currentVal = xmlAfter."${k}" ? xmlAfter."${k}"[0].text() : null
+                    if (currentVal != v) error "Validation failed for ${k} in ${f.name}. Expected: ${v}, Found: ${currentVal}"
                 }
-                println "Validation passed for file: ${f.path}"
+                echo "Validation passed for: ${f.name}"
             }
         }
 
-        // ===============================
-        // 6️⃣ Deploy to multiple Salesforce Orgs
-        // ===============================
+        // ========================================================
+        // 6️⃣ Deploy to Multiple Orgs
+        // ========================================================
         stage('Deploy to Orgs') {
             def orgAliases = params.DEPLOY_ORG_ALIASES.split(';')
-            xmlFiles = env.XML_FILE_PATHS.split(';').collect { new File(it) }
-            def filesToDeploy = xmlFiles.collect { it.path }.join(' ')
-
+            def xmlPaths = env.XML_FILE_PATHS.split(';').collect { it.trim() }.join(' ')
             orgAliases.each { orgAlias ->
                 echo "Deploying to org: ${orgAlias}"
-                def deployResult = bat(script: "sfdx force:source:deploy -p ${filesToDeploy} -u ${orgAlias} --wait 10 --testlevel NoTestRun", returnStatus: true)
-                if (deployResult != 0) {
+
+                def deployCmd = "sf project deploy start --source-dir force-app/main/default/settings --target-org ${orgAlias} --ignore-conflicts --wait 10 --verbose"
+
+                def result = isUnix() ? sh(script: deployCmd, returnStatus: true) : bat(script: deployCmd, returnStatus: true)
+                if (result != 0) {
                     error "Deployment failed for org: ${orgAlias}"
+                } else {
+                    echo "Deployment succeeded for org: ${orgAlias}"
                 }
-                echo "Deployment succeeded for org: ${orgAlias}"
             }
         }
 
-        // ===============================
-        // 7️⃣ Commit updated XML to Git
-        // ===============================
+        // ========================================================
+        // 7️⃣ Commit Updated XML to Git
+        // ========================================================
         stage('Commit Updates') {
-            bat """
+            def commitCmd = """
                 git config user.email "jenkins@yourdomain.com"
                 git config user.name "Jenkins"
                 git checkout ${params.GIT_BRANCH}
-                git add ${env.XML_FILE_PATHS.replace(';',' ')}
-                git commit -m "Updated settings XML via Jenkins build for multiple orgs"
+                git add ${env.XML_FILE_PATHS.replace(';', ' ')}
+                git commit -m "Updated settings XML automatically via Jenkins"
                 git push origin ${params.GIT_BRANCH}
             """
+
+            if (isUnix()) {
+                sh commitCmd
+            } else {
+                bat commitCmd
+            }
         }
 
-        echo "Pipeline completed successfully for all orgs!"
+        echo "✅ Pipeline completed successfully for all orgs!"
 
     } catch (err) {
-        // ===============================
-        // 8️⃣ Rollback XML changes if anything fails
-        // ===============================
+        // ========================================================
+        // 8️⃣ Rollback if Failure
+        // ========================================================
         stage('Rollback Changes') {
             echo "Rolling back XML changes..."
             if (env.XML_FILE_PATHS) {
@@ -137,12 +145,11 @@ node {
                     def backupFile = new File(f.path + ".bak")
                     if (backupFile.exists()) {
                         f.text = backupFile.text
-                        println "Restored backup: ${f.path}"
+                        echo "Restored backup: ${f.path}"
                     }
                 }
             }
         }
-
         currentBuild.result = 'FAILURE'
         throw err
     }
