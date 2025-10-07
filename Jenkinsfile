@@ -21,10 +21,11 @@ node {
             echo "Creating backup folder: ${BACKUP_DIR}"
             if (isUnix()) {
                 sh "mkdir -p ${BACKUP_DIR}"
-                sh "cp ${XML_PATH} ${BACKUP_DIR}/"
+                sh "cp \"${XML_PATH}\" \"${BACKUP_DIR}/\""
             } else {
-                bat "mkdir ${BACKUP_DIR}"
-                bat "copy ${XML_PATH} ${BACKUP_DIR}\\"
+                bat "mkdir \"${BACKUP_DIR}\""
+                // Use xcopy for proper Windows backup
+                bat "xcopy \"${XML_PATH}\" \"${BACKUP_DIR}\\\" /Y /I"
             }
         }
 
@@ -32,9 +33,9 @@ node {
             echo "Validating XML path..."
             def fileExists = false
             if (isUnix()) {
-                fileExists = sh(script: "test -f ${XML_PATH} && echo true || echo false", returnStdout: true).trim() == "true"
+                fileExists = sh(script: "test -f \"${XML_PATH}\" && echo true || echo false", returnStdout: true).trim() == "true"
             } else {
-                fileExists = bat(script: "if exist ${XML_PATH} (echo true) else (echo false)", returnStdout: true).trim() == "true"
+                fileExists = bat(script: "if exist \"${XML_PATH}\" (echo true) else (echo false)", returnStdout: true).trim() == "true"
             }
 
             if (!fileExists) {
@@ -47,7 +48,7 @@ node {
             echo "Updating tag <${TAG_NAME}> in XML to value: ${TAG_VALUE}"
             def xmlContent = readFile(XML_PATH)
             def pattern = /<${TAG_NAME}>.*?<\/${TAG_NAME}>/
-            if (!xmlContent =~ pattern) {
+            if (!(xmlContent =~ pattern)) {
                 error "Tag <${TAG_NAME}> not found in XML"
             }
             xmlContent = xmlContent.replaceAll(pattern, "<${TAG_NAME}>${TAG_VALUE}</${TAG_NAME}>")
@@ -58,9 +59,9 @@ node {
             echo "Checking for changes..."
             def diffOutput = ""
             if (isUnix()) {
-                diffOutput = sh(script: "diff ${BACKUP_DIR}/${XML_PATH.tokenize('/').last()} ${XML_PATH} || true", returnStdout: true).trim()
+                diffOutput = sh(script: "diff \"${BACKUP_DIR}/${XML_PATH.tokenize('/').last()}\" \"${XML_PATH}\" || true", returnStdout: true).trim()
             } else {
-                diffOutput = bat(script: "fc ${BACKUP_DIR}\\${XML_PATH.tokenize('\\/').last()} ${XML_PATH}", returnStdout: true).trim()
+                diffOutput = bat(script: "fc \"${BACKUP_DIR}\\${XML_PATH.tokenize('\\/').last()}\" \"${XML_PATH}\"", returnStdout: true).trim()
             }
 
             if (!diffOutput) {
@@ -86,13 +87,13 @@ node {
                 sh """
                     git config user.email "jenkins@example.com"
                     git config user.name "Jenkins CI"
-                    git add ${XML_PATH}
+                    git add "${XML_PATH}"
                     git commit -m "Updated <${TAG_NAME}> to ${TAG_VALUE} via Jenkins build #${env.BUILD_ID}" || echo "No changes to commit"
                     git push origin ${GIT_BRANCH}
                 """
             } else {
                 bat """
-                    git add ${XML_PATH}
+                    git add "${XML_PATH}"
                     git commit -m "Updated <${TAG_NAME}> to ${TAG_VALUE} via Jenkins build #${env.BUILD_ID}" || echo No changes to commit
                     git push origin ${GIT_BRANCH}
                 """
