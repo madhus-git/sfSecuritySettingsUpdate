@@ -1,5 +1,5 @@
 // ================================
-// Scripted Jenkins Pipeline (Windows & Unix Safe)
+// Scripted Jenkins Pipeline (Cross-Platform Safe)
 // ================================
 node {
 
@@ -106,7 +106,8 @@ node {
                         exit /b 1
                     )
                 """
-                def diffOutput = bat(script: "fc \"${backupFile}\" \"${XML_PATH}\"", returnStdout: true).trim()
+                // Ignore fc exit code but capture output
+                def diffOutput = bat(script: "fc \"${backupFile}\" \"${XML_PATH}\" || exit /b 0", returnStdout: true).trim()
                 if (!diffOutput) {
                     echo "No changes detected. Skipping Git push and deployment."
                     currentBuild.result = 'SUCCESS'
