@@ -12,6 +12,14 @@ node {
 
     try {
 
+        // -------------------------------
+        // Early Parameter Validation
+        // -------------------------------
+        if (!ORG_ALIAS?.trim()) { error "OrgAlias parameter is empty." }
+        if (!XML_PATH?.trim()) { error "XMLFilePath parameter is empty." }
+        if (!TAG_NAME?.trim()) { error "TagName parameter is empty." }
+        if (!TAG_VALUE?.trim()) { error "TagValue parameter is empty." }
+
         stage('Checkout Code') {
             echo "Checking out code..."
             checkout scm
@@ -20,12 +28,19 @@ node {
         stage('Create Backup Folder and Backup Retrieved Settings') {
             echo "Creating backup folder: ${BACKUP_DIR}"
             if (isUnix()) {
-                sh "mkdir -p ${BACKUP_DIR}"
+                sh "mkdir -p \"${BACKUP_DIR}\""
                 sh "cp \"${XML_PATH}\" \"${BACKUP_DIR}/\""
             } else {
                 bat "mkdir \"${BACKUP_DIR}\""
-                // Use xcopy for proper Windows backup
-                bat "xcopy \"${XML_PATH}\" \"${BACKUP_DIR}\\\" /Y /I"
+                // Safe xcopy with file existence check
+                bat """
+                    if exist "${XML_PATH}" (
+                        xcopy "${XML_PATH}" "${BACKUP_DIR}\\\" /Y /I
+                    ) else (
+                        echo XML file not found: ${XML_PATH}
+                        exit /b 1
+                    )
+                """
             }
         }
 
@@ -61,7 +76,7 @@ node {
             if (isUnix()) {
                 diffOutput = sh(script: "diff \"${BACKUP_DIR}/${XML_PATH.tokenize('/').last()}\" \"${XML_PATH}\" || true", returnStdout: true).trim()
             } else {
-                diffOutput = bat(script: "fc \"${BACKUP_DIR}\\${XML_PATH.tokenize('\\/').last()}\" \"${XML_PATH}\"", returnStdout: true).trim()
+                diffOutput = bat(script: "fc \"${BACKUP_DIR}\\${XML_PATH.tokenize('\\\\/').last()}\" \"${XML_PATH}\"", returnStdout: true).trim()
             }
 
             if (!diffOutput) {
