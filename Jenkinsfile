@@ -202,7 +202,7 @@ node {
         if(env.BACKUP_FILES) {
             echo "[ROLLBACK] Restoring backups..."
             def backupFilesJson = env.BACKUP_FILES
-            def backupFiles = new groovy.json.JsonSlurper().parseText(backupFilesJson)
+            backupFiles = new groovy.json.JsonSlurper().parseText(backupFilesJson)
             backupFiles.each { orig, backup ->
                 copyFile(backup, orig)
                 echo "Restored ${orig} from ${backup}"
