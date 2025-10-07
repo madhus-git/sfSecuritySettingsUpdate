@@ -1,5 +1,5 @@
 // ================================
-// Scripted Jenkins Pipeline (Cross-Platform Safe)
+// Scripted Jenkins Pipeline (Cross-Platform Safe, Git Detached HEAD Fixed)
 // ================================
 node {
 
@@ -132,12 +132,14 @@ node {
                 sh """
                     git config user.email "jenkins@example.com"
                     git config user.name "Jenkins CI"
+                    git checkout -B ${GIT_BRANCH}
                     git add "${XML_PATH}"
                     git commit -m "Updated <${TAG_NAME}> to ${TAG_VALUE} via Jenkins build #${env.BUILD_ID}" || echo "No changes to commit"
-                    git push origin ${GIT_BRANCH}
+                    git push -u origin ${GIT_BRANCH}
                 """
             } else {
                 bat """
+                    git checkout -B ${GIT_BRANCH}
                     git add "${XML_PATH}"
                     git commit -m "Updated <${TAG_NAME}> to ${TAG_VALUE} via Jenkins build #${env.BUILD_ID}" || echo No changes to commit
                     git push -u origin ${GIT_BRANCH}
