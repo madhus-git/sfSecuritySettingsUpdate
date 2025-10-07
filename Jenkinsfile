@@ -1,5 +1,5 @@
 // ================================
-// Scripted Jenkins Pipeline (Multi-Platform Safe)
+// Scripted Jenkins Pipeline (Cross-Platform Safe)
 // ================================
 node {
 
@@ -47,12 +47,12 @@ node {
             echo "Creating backup folder: ${BACKUP_DIR}"
             if (isUnix()) {
                 sh "mkdir -p \"${BACKUP_DIR}\""
-                sh "cp \"${XML_PATH}\" \"${backupFile}\""
+                sh "cp \"${XML_PATH}\" \"${BACKUP_DIR}/\""
             } else {
                 bat """
-                    mkdir "${BACKUP_DIR}"
+                    if not exist "${BACKUP_DIR}" mkdir "${BACKUP_DIR}"
                     if exist "${XML_PATH}" (
-                        xcopy "${XML_PATH}" "${backupFile}" /Y /I
+                        copy /Y "${XML_PATH}" "${BACKUP_DIR}\\"
                     ) else (
                         echo XML file not found: ${XML_PATH}
                         exit /b 1
@@ -92,13 +92,14 @@ node {
                     return
                 }
             } else {
+                // Ensure backup file exists
                 bat """
-                    if not exist "${backupFile}" (
-                        echo Backup file not found: ${backupFile}
+                    if not exist "${BACKUP_DIR}\\${xmlFileName}" (
+                        echo Backup file not found: ${BACKUP_DIR}\\${xmlFileName}
                         exit /b 1
                     )
                 """
-                def diffOutput = bat(script: "fc \"${backupFile}\" \"${XML_PATH}\"", returnStdout: true).trim()
+                def diffOutput = bat(script: "fc \"${BACKUP_DIR}\\${xmlFileName}\" \"${XML_PATH}\"", returnStdout: true).trim()
                 if (!diffOutput) {
                     echo "No changes detected. Skipping Git push and deployment."
                     currentBuild.result = 'SUCCESS'
