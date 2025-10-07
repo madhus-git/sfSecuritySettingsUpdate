@@ -1,6 +1,14 @@
 node {
     // -------------------------------
-    // 0️⃣ Parameters (passed at build)
+    // 0️⃣ Checkout repository
+    // -------------------------------
+    stage('Checkout') {
+        echo "[STEP] Checking out repository..."
+        checkout scm
+    }
+
+    // -------------------------------
+    // 1️⃣ Parameters (passed at build)
     // -------------------------------
     def orgAlias = params.ORG_ALIAS
     def xmlFilesInput = params.XML_FILES        // Comma-separated XML files
@@ -40,7 +48,7 @@ node {
 
     try {
         // -------------------------------
-        // 1️⃣ Prepare directories
+        // 2️⃣ Prepare directories
         // -------------------------------
         stage('Prepare') {
             echo "[STEP] Creating log and backup directories..."
@@ -51,7 +59,22 @@ node {
         }
 
         // -------------------------------
-        // 2️⃣ Backup XML files
+        // 3️⃣ Validate XML files exist
+        // -------------------------------
+        stage('Validate XML Paths') {
+            echo "[STEP] Validating XML file paths..."
+            xmlFilesInput.split(",").each { file ->
+                file = file.trim()
+                runCommand(
+                    "test -f ${file} || (echo File not found: ${file} && exit 1)",
+                    "if not exist \"${file}\" (echo File not found: ${file} & exit 1)"
+                )
+                echo "Found XML file: ${file}"
+            }
+        }
+
+        // -------------------------------
+        // 4️⃣ Backup XML files
         // -------------------------------
         stage('Backup XML') {
             echo "[STEP] Backing up XML files..."
@@ -60,13 +83,6 @@ node {
                 def backupFile = "${file}.bak_${timestamp}"
                 backupFiles[file] = backupFile
 
-                // Validate file exists
-                runCommand(
-                    "test -f ${file} || (echo File not found: ${file} && exit 1)",
-                    "if not exist \"${file}\" (echo File not found: ${file} & exit 1)"
-                )
-
-                // Copy backup
                 runCommand(
                     "cp ${file} ${backupFile}",
                     "copy /Y \"${file}\" \"${backupFile}\""
@@ -79,7 +95,7 @@ node {
         }
 
         // -------------------------------
-        // 3️⃣ Update XML files
+        // 5️⃣ Update XML files
         // -------------------------------
         stage('Update XML') {
             echo "[STEP] Updating XML files..."
@@ -107,7 +123,7 @@ node {
         }
 
         // -------------------------------
-        // 4️⃣ Validate updated XML values
+        // 6️⃣ Validate updated XML values
         // -------------------------------
         stage('Validate Changes') {
             echo "[STEP] Validating XML updates..."
@@ -133,7 +149,7 @@ node {
         }
 
         // -------------------------------
-        // 5️⃣ Deploy to Salesforce
+        // 7️⃣ Deploy to Salesforce
         // -------------------------------
         stage('Deploy to Salesforce') {
             echo "[STEP] Deploying to org: ${orgAlias}"
@@ -146,7 +162,7 @@ node {
         }
 
         // -------------------------------
-        // 6️⃣ Push updated XML files to GitHub
+        // 8️⃣ Push updated XML files to GitHub
         // -------------------------------
         stage('Push to GitHub') {
             echo "[STEP] Pushing updated XML files to GitHub..."
