@@ -15,7 +15,7 @@ node {
     def backupFiles = [:] // Map to track backups for rollback
 
     // -------------------------------
-    // Helper Function: Parse tags
+    // Helper Functions
     // -------------------------------
     def parseTags = { tagsStr ->
         def map = [:]
@@ -26,12 +26,27 @@ node {
         return map
     }
 
+    def runCommand = { cmd ->
+        if (isUnix()) {
+            sh cmd
+        } else {
+            bat cmd
+        }
+    }
+
     // -------------------------------
     // 1️⃣ Prepare directories
     // -------------------------------
     stage('Prepare') {
         echo "[STEP] Creating log and backup directories..."
-        sh "mkdir -p ${logDir} ${backupDir}"
+        if (isUnix()) {
+            sh "mkdir -p ${logDir} ${backupDir}"
+        } else {
+            bat """
+                if not exist "${logDir}" mkdir "${logDir}"
+                if not exist "${backupDir}" mkdir "${backupDir}"
+            """
+        }
     }
 
     // -------------------------------
@@ -43,7 +58,11 @@ node {
             file = file.trim()
             def backupFile = "${file}.bak_${timestamp}"
             backupFiles[file] = backupFile
-            sh "cp ${file} ${backupFile}"
+            if (isUnix()) {
+                sh "cp ${file} ${backupFile}"
+            } else {
+                bat "copy /Y \"${file}\" \"${backupFile}\""
+            }
             echo "Backup created: ${backupFile}"
         }
     }
@@ -69,7 +88,11 @@ node {
                     ${tags.collect { k,v -> "\$xml.SelectSingleNode(\"//ns:${k}\", \$nsMgr).InnerText = '${v}'" }.join("\n")}
                     \$xml.Save("${xmlFile}")
                 """
-                powershell(returnStatus: true, script: psScript)
+                if (isUnix()) {
+                    powershell(returnStatus: true, script: psScript)
+                } else {
+                    powershell(returnStatus: true, script: psScript)
+                }
             }
         }
         echo "XML files updated successfully."
@@ -94,7 +117,11 @@ node {
                     ${tags.collect { k,v -> "if (\$xml.SelectSingleNode(\"//ns:${k}\", \$nsMgr).InnerText -ne '${v}') { \$valid = \$false }" }.join("\n")}
                     if (-not \$valid) { exit 1 }
                 """
-                powershell(returnStatus: true, script: validationScript)
+                if (isUnix()) {
+                    powershell(returnStatus: true, script: validationScript)
+                } else {
+                    powershell(returnStatus: true, script: validationScript)
+                }
             }
         }
         echo "Validation passed for all XML files."
@@ -106,10 +133,11 @@ node {
     stage('Deploy to Salesforce') {
         echo "[STEP] Deploying to org: ${orgAlias}"
         def deployLog = "${logDir}/deploy_${timestamp}.json"
-        sh """
-            chcp 65001
-            sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}
-        """
+        if (isUnix()) {
+            sh "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}"
+        } else {
+            bat "sf deploy metadata --manifest ${packageXml} --target-org ${orgAlias} --test-level ${testLevel} --wait ${waitTime} --json > ${deployLog}"
+        }
         echo "Deployment completed. Log: ${deployLog}"
     }
 
@@ -118,13 +146,21 @@ node {
     // -------------------------------
     stage('Push to GitHub') {
         echo "[STEP] Pushing updated XML files to GitHub..."
-        sh """
-            git config user.email "jenkins@example.com"
-            git config user.name "Jenkins CI"
-            ${xmlFilesInput.split(",").collect { f -> "git add ${f.trim()}" }.join("\n")}
-            git commit -m "Updated XML files: ${xmlFilesInput.replaceAll(',', ', ')}"
-            git push origin HEAD
-        """
+        xmlFilesInput.split(",").each { file ->
+            file = file.trim()
+            if (isUnix()) {
+                sh "git add ${file}"
+            } else {
+                bat "git add \"${file}\""
+            }
+        }
+        if (isUnix()) {
+            sh 'git commit -m "Updated XML files" || echo "No changes to commit"'
+            sh 'git push origin HEAD'
+        } else {
+            bat 'git commit -m "Updated XML files" || echo No changes to commit'
+            bat 'git push origin HEAD'
+        }
         echo "Changes pushed to GitHub successfully."
     }
 
@@ -136,10 +172,12 @@ node {
             if(backupFiles.size() > 0) {
                 echo "[ROLLBACK] Restoring backups..."
                 backupFiles.each { orig, backup ->
-                    if(fileExists(backup)) {
+                    if (isUnix()) {
                         sh "cp ${backup} ${orig}"
-                        echo "Restored ${orig} from ${backup}"
+                    } else {
+                        bat "copy /Y \"${backup}\" \"${orig}\""
                     }
+                    echo "Restored ${orig} from ${backup}"
                 }
             }
         }
