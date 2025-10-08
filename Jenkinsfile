@@ -155,7 +155,7 @@ node {
                 string(credentialsId: 'sfdc-username', variable: 'SFDC_USERNAME'),
                 file(credentialsId: 'sfdc-jwt-key', variable: 'JWT_KEY_FILE')
             ]) {
-                def SFDC_HOST="https://login.salesforce.com"
+                def instanceUrl="https://login.salesforce.com"
                 if (isUnix()) {
                     sh """
                         set -x
@@ -164,7 +164,7 @@ node {
                             --jwt-key-file ${JWT_KEY_FILE} \
                             --username $SFDC_USERNAME \
                             --alias $ORG_ALIAS \
-                            --instance-url $SFDC_HOST | tee auth.log
+                            --instance-url $instanceUrl | tee auth.log
                     """
                 } else {
                     bat """
@@ -175,7 +175,7 @@ node {
                             --jwt-key-file %JWT_KEY_FILE% ^
                             --username %SFDC_USERNAME% ^
                             --alias %OrgAlias% ^
-                            --instance-url %SFDC_HOST%
+                            --instance-url ${instanceUrl}
                     """
                 }
             }
