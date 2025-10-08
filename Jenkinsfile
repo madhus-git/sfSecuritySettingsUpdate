@@ -154,8 +154,9 @@ node {
                 file(credentialsId: 'sfdc-jwt-key', variable: 'JWT_KEY_FILE')
             ]) {
                 def instanceUrl="https://login.salesforce.com"
-                def sfdcUsername=${SFDC_USERNAME}
-                echo "Username :::: $sfdcUsername"
+                echo "Username variable is set (masked): ${env.SFDC_USERNAME}"
+                echo "Consumer key variable is set (masked): ${env.CONNECTED_APP_CONSUMER_KEY}"
+                echo "JWT key file path: ${env.JWT_KEY_FILE}"
                 if (isUnix()) {
                     sh """
                         set -x
