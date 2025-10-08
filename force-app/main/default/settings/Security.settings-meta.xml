@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <SecuritySettings xmlns="http://soap.sforce.com/2006/04/metadata">
-  <canUsersGrantLoginAccess>false</canUsersGrantLoginAccess>
+  <canUsersGrantLoginAccess>true</canUsersGrantLoginAccess>
   <enableAdminLoginAsAnyUser>true</enableAdminLoginAsAnyUser>
   <enableAuditFieldsInactiveOwner>false</enableAuditFieldsInactiveOwner>
   <enableAuraSecureEvalPref>true</enableAuraSecureEvalPref>
