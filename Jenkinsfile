@@ -154,6 +154,8 @@ node {
                 file(credentialsId: 'sfdc-jwt-key', variable: 'JWT_KEY_FILE')
             ]) {
                 def instanceUrl="https://login.salesforce.com"
+                def sfdcUsername=${SFDC_USERNAME}
+                echo "Username :::: $sfdcUsername"
                 if (isUnix()) {
                     sh """
                         set -x
@@ -179,9 +181,6 @@ node {
             }
         }
 
-        // -------------------------------
-        // 🚀 Modified Deployment Stage
-        // -------------------------------
         stage('Deploy to Salesforce Org') {
             echo "Deploying only the updated XML file to Salesforce Org: ${ORG_ALIAS}"
 
