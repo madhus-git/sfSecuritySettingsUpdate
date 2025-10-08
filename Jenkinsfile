@@ -145,29 +145,35 @@ node {
             }
         }
 
-        stage('Authenticate Salesforce Org (JWT)') {
+        stage('Authenticate Org') {
             echo "Authenticating Salesforce Org: ${ORG_ALIAS} using JWT from Jenkins credentials..."
 
             // Retrieve credentials securely
             withCredentials([
                 string(credentialsId: 'sfdc-consumer-key', variable: 'CONNECTED_APP_CONSUMER_KEY'),
+                string(credentialsId: 'sfdc-username', variable: 'SFDC_USERNAME'),
                 file(credentialsId: 'sfdc-jwt-key', variable: 'JWT_KEY_FILE')
             ]) {
                 if (isUnix()) {
                     sh """
-                        sf auth:jwt:grant \
+                        set -x
+                        sf org login jwt \
                             --client-id ${CONNECTED_APP_CONSUMER_KEY} \
                             --jwt-key-file ${JWT_KEY_FILE} \
-                            --username ${ORG_ALIAS} \
-                            --set-default-dev-hub
+                            --username $SFDC_USERNAME \
+                            --alias $ORG_ALIAS \
+                            --instance-url $SFDC_HOST | tee auth.log
                     """
                 } else {
                     bat """
-                        sf auth:jwt:grant ^
-                            --client-id ${CONNECTED_APP_CONSUMER_KEY} ^
-                            --jwt-key-file ${JWT_KEY_FILE} ^
-                            --username ${ORG_ALIAS} ^
-                            --set-default-dev-hub
+                        @echo off
+                        echo on
+                        sf org login jwt ^
+                            --client-id %CONNECTED_APP_CONSUMER_KEY% ^
+                            --jwt-key-file %JWT_KEY_FILE% ^
+                            --username %SFDC_USERNAME% ^
+                            --alias %ORG_ALIAS% ^
+                            --instance-url %SFDC_HOST%
                     """
                 }
             }
@@ -176,9 +182,10 @@ node {
         stage('Deploy to Salesforce Org') {
             echo "Deploying to Salesforce Org: ${ORG_ALIAS}"
             if (isUnix()) {
-                sh "sf deploy metadata --target-org ${ORG_ALIAS} --manifest ./manifest/package.xml"
+                //sh "sf deploy metadata --target-org ${ORG_ALIAS} --manifest ./manifest/package.xml"
+                sf project deploy start --target-org $ORG_ALIAS --source-dir force-app --wait 10 | tee deploy.log
             } else {
-                bat "sf deploy metadata --target-org ${ORG_ALIAS} --manifest .\\manifest\\package.xml"
+                bat "sf project deploy start --target-org %ORG_ALIAS% --source-dir force-app --wait 10"
             }
         }
 
