@@ -148,13 +148,14 @@ node {
         stage('Authenticate Org') {
             echo "Authenticating Salesforce Org: ${ORG_ALIAS} using JWT from Jenkins credentials..."
 
-            def SFDC_HOST="https://login.salesforce.com"
+            
             // Retrieve credentials securely
             withCredentials([
                 string(credentialsId: 'sfdc-consumer-key', variable: 'CONNECTED_APP_CONSUMER_KEY'),
                 string(credentialsId: 'sfdc-username', variable: 'SFDC_USERNAME'),
                 file(credentialsId: 'sfdc-jwt-key', variable: 'JWT_KEY_FILE')
             ]) {
+                def SFDC_HOST="https://login.salesforce.com"
                 if (isUnix()) {
                     sh """
                         set -x
