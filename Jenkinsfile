@@ -1,3 +1,7 @@
+// ================================
+// Scripted Jenkins Pipeline (Secure JWT Auth via Jenkins Credentials)
+// Enhanced: Mandatory Parameters + Multiple Tag Updates + Org URL
+// ================================
 node {
 
     // -------------------------------
@@ -10,7 +14,7 @@ node {
             string(name: 'XMLFilePath', defaultValue: '', description: 'Path to XML file to update'),
             string(name: 'TagNames', defaultValue: '', description: 'Comma-separated XML tag names to update (e.g. tag1,tag2)'),
             string(name: 'TagValues', defaultValue: '', description: 'Comma-separated XML tag values (e.g. value1,value2)'),
-            string(name: 'BranchName', defaultValue: 'devOrg', description: 'Git branch to push changes')
+            string(name: 'BranchName', defaultValue: '', description: 'Git branch to push changes')
         ])
     ])
 
@@ -22,7 +26,7 @@ node {
     def XML_PATH = params.XMLFilePath?.trim()
     def TAG_NAMES = params.TagNames?.trim()
     def TAG_VALUES = params.TagValues?.trim()
-    def GIT_BRANCH = params.BranchName?.trim() ?: 'devOrg'
+    def GIT_BRANCH = params.BranchName?.trim()
     def BACKUP_DIR = "backup_${env.BUILD_ID}"
     def xmlFileName = XML_PATH.tokenize('\\\\/').last()
     def backupFile = "${BACKUP_DIR}/${xmlFileName}"
@@ -36,13 +40,14 @@ node {
 
     try {
         // -------------------------------
-        // Validate Parameters
+        // Mandatory Parameter Validation
         // -------------------------------
-        if (!ORG_ALIAS) { error "OrgAlias parameter is empty." }
-        if (!ORG_URL) { error "OrgUrl parameter is empty." }
-        if (!XML_PATH) { error "XMLFilePath parameter is empty." }
-        if (!TAG_NAMES) { error "TagNames parameter is empty." }
-        if (!TAG_VALUES) { error "TagValues parameter is empty." }
+        if (!ORG_ALIAS) { error "OrgAlias parameter is mandatory. Please provide a value." }
+        if (!ORG_URL) { error "OrgUrl parameter is mandatory. Please provide a value." }
+        if (!XML_PATH) { error "XMLFilePath parameter is mandatory. Please provide a value." }
+        if (!TAG_NAMES) { error "TagNames parameter is mandatory. Please provide a value." }
+        if (!TAG_VALUES) { error "TagValues parameter is mandatory. Please provide a value." }
+        if (!GIT_BRANCH) { error "BranchName parameter is mandatory. Please provide a value." }
 
         // Split multiple tags/values
         def tagList = TAG_NAMES.split(',').collect { it.trim() }
