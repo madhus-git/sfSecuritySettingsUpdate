@@ -1,6 +1,3 @@
-// ================================
-// Scripted Jenkins Pipeline (Secure JWT Auth via Jenkins Credentials)
-// ================================
 node {
 
     // -------------------------------
@@ -9,9 +6,10 @@ node {
     properties([
         parameters([
             string(name: 'OrgAlias', defaultValue: '', description: 'Salesforce Org Alias / Username'),
+            string(name: 'OrgUrl', defaultValue: 'https://login.salesforce.com', description: 'Salesforce Org URL (e.g. https://login.salesforce.com or https://test.salesforce.com)'),
             string(name: 'XMLFilePath', defaultValue: '', description: 'Path to XML file to update'),
-            string(name: 'TagName', defaultValue: '', description: 'XML Tag to update'),
-            string(name: 'TagValue', defaultValue: '', description: 'New value for XML Tag'),
+            string(name: 'TagNames', defaultValue: '', description: 'Comma-separated XML tag names to update (e.g. tag1,tag2)'),
+            string(name: 'TagValues', defaultValue: '', description: 'Comma-separated XML tag values (e.g. value1,value2)'),
             string(name: 'BranchName', defaultValue: 'devOrg', description: 'Git branch to push changes')
         ])
     ])
@@ -20,15 +18,16 @@ node {
     // Initialize Variables
     // -------------------------------
     def ORG_ALIAS = params.OrgAlias?.trim()
+    def ORG_URL = params.OrgUrl?.trim()
     def XML_PATH = params.XMLFilePath?.trim()
-    def TAG_NAME = params.TagName?.trim()
-    def TAG_VALUE = params.TagValue?.trim()
+    def TAG_NAMES = params.TagNames?.trim()
+    def TAG_VALUES = params.TagValues?.trim()
     def GIT_BRANCH = params.BranchName?.trim() ?: 'devOrg'
     def BACKUP_DIR = "backup_${env.BUILD_ID}"
     def xmlFileName = XML_PATH.tokenize('\\\\/').last()
     def backupFile = "${BACKUP_DIR}/${xmlFileName}"
 
-    // Normalize path for Windows
+    // Normalize for Windows
     if (!isUnix()) {
         XML_PATH = XML_PATH.replaceAll('/', '\\\\')
         backupFile = backupFile.replaceAll('/', '\\\\')
@@ -36,20 +35,33 @@ node {
     }
 
     try {
-
         // -------------------------------
-        // Early Parameter Validation
+        // Validate Parameters
         // -------------------------------
         if (!ORG_ALIAS) { error "OrgAlias parameter is empty." }
+        if (!ORG_URL) { error "OrgUrl parameter is empty." }
         if (!XML_PATH) { error "XMLFilePath parameter is empty." }
-        if (!TAG_NAME) { error "TagName parameter is empty." }
-        if (!TAG_VALUE) { error "TagValue parameter is empty." }
+        if (!TAG_NAMES) { error "TagNames parameter is empty." }
+        if (!TAG_VALUES) { error "TagValues parameter is empty." }
 
+        // Split multiple tags/values
+        def tagList = TAG_NAMES.split(',').collect { it.trim() }
+        def valueList = TAG_VALUES.split(',').collect { it.trim() }
+        if (tagList.size() != valueList.size()) {
+            error "Number of TagNames and TagValues must match. Found ${tagList.size()} tags and ${valueList.size()} values."
+        }
+
+        // -------------------------------
+        // Checkout Code
+        // -------------------------------
         stage('Checkout Code') {
             echo "Checking out code..."
             checkout scm
         }
 
+        // -------------------------------
+        // Backup XML
+        // -------------------------------
         stage('Create Backup Folder and Backup XML') {
             echo "Creating backup folder: ${BACKUP_DIR}"
             if (isUnix()) {
@@ -68,6 +80,9 @@ node {
             }
         }
 
+        // -------------------------------
+        // Validate XML Path
+        // -------------------------------
         stage('Validate XML Path') {
             echo "Validating XML path..."
             def fileExists = false
@@ -80,71 +95,79 @@ node {
             echo "XML path validated: ${XML_PATH}"
         }
 
-        stage('Update Security Settings') {
-            echo "Updating tag <${TAG_NAME}> in XML to value: ${TAG_VALUE}"
+        // -------------------------------
+        // Update Multiple Tags in XML
+        // -------------------------------
+        stage('Update XML Tags') {
+            echo "Updating multiple tags in XML..."
             def xmlContent = readFile(XML_PATH)
-            def pattern = /<${TAG_NAME}>.*?<\/${TAG_NAME}>/
-            if (!(xmlContent =~ pattern)) { error "Tag <${TAG_NAME}> not found in XML" }
-            xmlContent = xmlContent.replaceAll(pattern, "<${TAG_NAME}>${TAG_VALUE}</${TAG_NAME}>")
+
+            for (int i = 0; i < tagList.size(); i++) {
+                def tag = tagList[i]
+                def value = valueList[i]
+                echo "Updating tag <${tag}> → ${value}"
+                def pattern = /<${tag}>.*?<\/${tag}>/
+                if (!(xmlContent =~ pattern)) {
+                    echo "Tag <${tag}> not found in XML, skipping..."
+                    continue
+                }
+                xmlContent = xmlContent.replaceAll(pattern, "<${tag}>${value}</${tag}>")
+            }
+
             writeFile(file: XML_PATH, text: xmlContent)
         }
 
+        // -------------------------------
+        // Detect Changes
+        // -------------------------------
         stage('Detect Changes in XML') {
             echo "Checking for changes..."
+            def changed = false
+
             if (isUnix()) {
                 def diffOutput = sh(script: "diff \"${backupFile}\" \"${XML_PATH}\" || true", returnStdout: true).trim()
-                if (!diffOutput) {
-                    echo "No changes detected. Skipping Git push and deployment."
-                    currentBuild.result = 'SUCCESS'
-                    return
-                }
+                changed = diffOutput ? true : false
             } else {
-                bat """
-                    if not exist "${backupFile}" (
-                        echo Backup file not found: ${backupFile}
-                        exit /b 1
-                    )
-                """
                 def diffOutput = bat(script: "fc \"${backupFile}\" \"${XML_PATH}\" || exit /b 0", returnStdout: true).trim()
-                if (!diffOutput) {
-                    echo "No changes detected. Skipping Git push and deployment."
-                    currentBuild.result = 'SUCCESS'
-                    return
-                }
+                changed = !diffOutput.isEmpty()
             }
+
+            if (!changed) {
+                echo "No changes detected. Skipping Git push and deployment."
+                currentBuild.result = 'SUCCESS'
+                return
+            }
+
             echo "Changes detected."
         }
 
-        stage('Validate Updated Values') {
-            echo "Validating updated XML values..."
-            def xmlContent = readFile(XML_PATH)
-            if (!xmlContent.contains("<${TAG_NAME}>${TAG_VALUE}</${TAG_NAME}>")) {
-                error "Validation failed: Tag <${TAG_NAME}> was not updated correctly"
-            }
-            echo "Validation passed."
-        }
-
+        // -------------------------------
+        // Commit & Push Changes
+        // -------------------------------
         stage('Push Changes to GitHub') {
-            echo "Committing and pushing changes to GitHub..."
+            echo "Committing and pushing changes to branch: ${GIT_BRANCH}"
             if (isUnix()) {
                 sh """
                     git config user.email "jenkins@example.com"
                     git config user.name "Jenkins CI"
                     git checkout -B ${GIT_BRANCH}
                     git add "${XML_PATH}"
-                    git commit -m "Updated <${TAG_NAME}> to ${TAG_VALUE} via Jenkins build #${env.BUILD_ID}" || echo "No changes to commit"
+                    git commit -m "Updated XML tags via Jenkins build #${env.BUILD_ID}" || echo "No changes to commit"
                     git push -u origin ${GIT_BRANCH}
                 """
             } else {
                 bat """
                     git checkout -B ${GIT_BRANCH}
                     git add "${XML_PATH}"
-                    git commit -m "Updated <${TAG_NAME}> to ${TAG_VALUE} via Jenkins build #${env.BUILD_ID}" || echo No changes to commit
+                    git commit -m "Updated XML tags via Jenkins build #${env.BUILD_ID}" || echo No changes to commit
                     git push -u origin ${GIT_BRANCH}
                 """
             }
         }
 
+        // -------------------------------
+        // Authenticate Salesforce Org
+        // -------------------------------
         stage('Authenticate Org') {
             echo "Authenticating Salesforce Org: ${ORG_ALIAS} using JWT from Jenkins credentials..."
 
@@ -153,10 +176,6 @@ node {
                 string(credentialsId: 'sfdc-username', variable: 'SFDC_USERNAME'),
                 file(credentialsId: 'sfdc-jwt-key', variable: 'JWT_KEY_FILE')
             ]) {
-                def instanceUrl="https://login.salesforce.com"
-                echo "Username variable is set (masked): ${env.SFDC_USERNAME}"
-                echo "Consumer key variable is set (masked): ${env.CONNECTED_APP_CONSUMER_KEY}"
-                echo "JWT key file path: ${env.JWT_KEY_FILE}"
                 if (isUnix()) {
                     sh """
                         set -x
@@ -165,7 +184,7 @@ node {
                             --jwt-key-file ${JWT_KEY_FILE} \
                             --username $SFDC_USERNAME \
                             --alias $ORG_ALIAS \
-                            --instance-url $instanceUrl | tee auth.log
+                            --instance-url ${ORG_URL} | tee auth.log
                     """
                 } else {
                     bat """
@@ -176,12 +195,15 @@ node {
                             --jwt-key-file %JWT_KEY_FILE% ^
                             --username %SFDC_USERNAME% ^
                             --alias %OrgAlias% ^
-                            --instance-url ${instanceUrl}
+                            --instance-url ${ORG_URL}
                     """
                 }
             }
         }
 
+        // -------------------------------
+        // Deploy Updated XML Only
+        // -------------------------------
         stage('Deploy to Salesforce Org') {
             echo "Deploying only the updated XML file to Salesforce Org: ${ORG_ALIAS}"
 
