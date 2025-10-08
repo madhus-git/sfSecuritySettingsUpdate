@@ -59,7 +59,7 @@ node {
                 bat """
                     if not exist "${BACKUP_DIR}" mkdir "${BACKUP_DIR}"
                     if exist "${XML_PATH}" (
-                        copy /Y "${XML_PATH}" "${BACKUP_DIR}\\"
+                        copy /Y "${XML_PATH}" "${BACKUP_DIR}\\" >nul
                     ) else (
                         echo XML file not found: ${XML_PATH}
                         exit /b 1
@@ -148,8 +148,6 @@ node {
         stage('Authenticate Org') {
             echo "Authenticating Salesforce Org: ${ORG_ALIAS} using JWT from Jenkins credentials..."
 
-            
-            // Retrieve credentials securely
             withCredentials([
                 string(credentialsId: 'sfdc-consumer-key', variable: 'CONNECTED_APP_CONSUMER_KEY'),
                 string(credentialsId: 'sfdc-username', variable: 'SFDC_USERNAME'),
@@ -169,7 +167,7 @@ node {
                 } else {
                     bat """
                         @echo off
-                        echo on
+                        echo Authenticating Salesforce Org...
                         sf org login jwt ^
                             --client-id %CONNECTED_APP_CONSUMER_KEY% ^
                             --jwt-key-file %JWT_KEY_FILE% ^
@@ -181,13 +179,27 @@ node {
             }
         }
 
+        // -------------------------------
+        // 🚀 Modified Deployment Stage
+        // -------------------------------
         stage('Deploy to Salesforce Org') {
-            echo "Deploying to Salesforce Org: ${ORG_ALIAS}"
+            echo "Deploying only the updated XML file to Salesforce Org: ${ORG_ALIAS}"
+
+            def deployExists = fileExists(XML_PATH)
+            if (!deployExists) {
+                error "Deployment failed: File not found at ${XML_PATH}"
+            }
+
             if (isUnix()) {
-                //sh "sf deploy metadata --target-org ${ORG_ALIAS} --manifest ./manifest/package.xml"
-                sf project deploy start --target-org $ORG_ALIAS --source-dir force-app --wait 10 | tee deploy.log
+                sh """
+                    echo "Deploying ${XML_PATH} to org ${ORG_ALIAS}..."
+                    sf project deploy start --target-org ${ORG_ALIAS} --source-dir "${XML_PATH}" --wait 10
+                """
             } else {
-                bat "sf project deploy start --target-org %OrgAlias% --source-dir force-app --wait 10"
+                bat """
+                    echo Deploying ${XML_PATH} to org ${ORG_ALIAS}...
+                    sf project deploy start --target-org %OrgAlias% --source-dir "${XML_PATH}" --wait 10
+                """
             }
         }
 
