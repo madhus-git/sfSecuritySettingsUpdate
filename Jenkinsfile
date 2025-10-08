@@ -187,7 +187,7 @@ node {
                 //sh "sf deploy metadata --target-org ${ORG_ALIAS} --manifest ./manifest/package.xml"
                 sf project deploy start --target-org $ORG_ALIAS --source-dir force-app --wait 10 | tee deploy.log
             } else {
-                bat "sf project deploy start --target-org %ORG_ALIAS% --source-dir force-app --wait 10"
+                bat "sf project deploy start --target-org %OrgAlias% --source-dir force-app --wait 10"
             }
         }
 
