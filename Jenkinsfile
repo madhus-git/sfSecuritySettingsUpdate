@@ -1,213 +1,144 @@
 // ================================
-// Scripted Jenkins Pipeline (Secure JWT Auth via Jenkins Credentials)
-// Enhanced: /backups folder, auto absolute XML path, tag comparison
+// Scripted Jenkins Pipeline for Salesforce Metadata Backup & Deploy
 // ================================
+
 node {
 
+    // -------------------------------
+    // Build Parameters (with Red * for mandatory fields)
+    // -------------------------------
     properties([
         parameters([
-            string(name: 'OrgAlias', defaultValue: '', description: '* Salesforce Org Alias / Username'),
-            string(name: 'OrgUrl', defaultValue: 'https://login.salesforce.com', description: '* Salesforce Org URL'),
-            string(name: 'XMLFilePath', defaultValue: '', description: '* Path to XML file to update (e.g. force-app/main/default/settings/Security.settings-meta.xml)'),
-            string(name: 'TagNames', defaultValue: '', description: '* Comma-separated XML tag names (e.g. tag1,tag2)'),
-            string(name: 'TagValues', defaultValue: '', description: '* Comma-separated XML tag values (e.g. value1,value2)'),
-            string(name: 'BranchName', defaultValue: '', description: '* Git branch to push changes (e.g. devOrg)')
+            string(name: 'OrgAlias', description: '<font color="red">*</font> Salesforce Org Alias (Mandatory)'),
+            string(name: 'OrgUrl', description: '<font color="red">*</font> Salesforce Org URL (Mandatory)'),
+            string(name: 'XML_PATH', description: '<font color="red">*</font> Path to XML file relative to repo root (e.g., force-app/main/default/settings/Security.settings-meta.xml)'),
+            
+            text(name: 'TagNames', description: '<font color="red">*</font> Comma-separated Tag Names (e.g., Name,Description,IsActive)'),
+            text(name: 'TagValues', description: '<font color="red">*</font> Comma-separated Tag Values (e.g., Dev,Test,True)'),
+            
+            string(name: 'BackupFolder', defaultValue: 'backups', description: 'Backup folder name (default: backups)')
         ])
     ])
 
-    def ORG_ALIAS = params.OrgAlias?.trim()
-    def ORG_URL = params.OrgUrl?.trim()
-    def XML_PATH = params.XMLFilePath?.trim()
-    def TAG_NAMES = params.TagNames?.trim()
-    def TAG_VALUES = params.TagValues?.trim()
-    def GIT_BRANCH = params.BranchName?.trim()
-    def BACKUP_DIR = "backups/backup_${env.BUILD_ID}"
-    def xmlFileName = XML_PATH.tokenize('/').last()
-    def backupFile = "${BACKUP_DIR}/${xmlFileName}"
+    // -------------------------------
+    // Validate Parameters
+    // -------------------------------
+    stage('Validate Parameters') {
+        echo "Validating mandatory parameters..."
 
-    try {
-        // -------------------------------
-        // Validate mandatory parameters
-        // -------------------------------
-        if (!ORG_ALIAS) error "OrgAlias is mandatory"
-        if (!ORG_URL) error "OrgUrl is mandatory"
-        if (!XML_PATH) error "XMLFilePath is mandatory"
-        if (!TAG_NAMES) error "TagNames is mandatory"
-        if (!TAG_VALUES) error "TagValues is mandatory"
-        if (!GIT_BRANCH) error "BranchName is mandatory"
+        def missingParams = []
+        if (!params.OrgAlias?.trim()) missingParams << 'OrgAlias'
+        if (!params.OrgUrl?.trim()) missingParams << 'OrgUrl'
+        if (!params.XML_PATH?.trim()) missingParams << 'XML_PATH'
+        if (!params.TagNames?.trim()) missingParams << 'TagNames'
+        if (!params.TagValues?.trim()) missingParams << 'TagValues'
 
-        def tagList = TAG_NAMES.split(',').collect { it.trim() }
-        def valueList = TAG_VALUES.split(',').collect { it.trim() }
-        if (tagList.size() != valueList.size()) {
-            error "Number of TagNames (${tagList.size()}) must match TagValues (${valueList.size()})"
+        if (missingParams) {
+            error("Missing mandatory parameters: ${missingParams.join(', ')}")
         }
 
-        // -------------------------------
-        // Checkout code
-        // -------------------------------
-        stage('Checkout Code') {
-            echo "Checking out source code..."
-            checkout scm
-        }
+        // Assign trimmed values
+        ORG_ALIAS   = params.OrgAlias.trim()
+        ORG_URL     = params.OrgUrl.trim()
+        XML_PATH    = params.XML_PATH.trim()
+        TAG_NAMES   = params.TagNames.trim()
+        TAG_VALUES  = params.TagValues.trim()
+        BACKUP_DIR  = params.BackupFolder?.trim() ?: 'backups'
 
-        // -------------------------------
-        // Ensure XML path is absolute (workspace-aware)
-        // -------------------------------
+        // Normalize XML path to absolute path within workspace
         if (!XML_PATH.startsWith('/') && !XML_PATH.matches('^[A-Za-z]:.*')) {
             XML_PATH = "${env.WORKSPACE}/${XML_PATH}"
         }
         if (!isUnix()) {
             XML_PATH = XML_PATH.replace('/', '\\')
-            BACKUP_DIR = BACKUP_DIR.replace('/', '\\')
-            backupFile = backupFile.replace('/', '\\')
         }
 
-        echo "Resolved XML Path: ${XML_PATH}"
-        echo "Backup Directory: ${BACKUP_DIR}"
+        echo "Parameters validated successfully"
+        echo "Resolved XML_PATH: ${XML_PATH}"
+    }
 
-        // -------------------------------
-        // Backup XML under /backups
-        // -------------------------------
-        stage('Backup XML to /backups') {
-            echo "Creating backup folder under repo: ${BACKUP_DIR}"
+    // -------------------------------
+    // Create Backup Folder and Copy File
+    // -------------------------------
+    stage('Backup XML to /backups folder') {
+        try {
+            def timestamp = new Date().format('yyyyMMdd_HHmmss')
+            def backupPath = "${BACKUP_DIR}/backup_${timestamp}"
+
+            echo "Creating backup folder under repo: ${backupPath}"
+
+            bat """
+                if not exist "${backupPath}" mkdir "${backupPath}"
+                copy /Y "${XML_PATH}" "${backupPath}\\"
+            """
+
+            echo "Backup completed successfully at ${backupPath}"
+
+        } catch (err) {
+            echo "Error during backup: ${err}"
+            error("Backup failed. Verify XML_PATH and permissions.")
+        }
+    }
+
+    // -------------------------------
+    // Update XML File with Tag Values
+    // -------------------------------
+    stage('Update XML Tags') {
+        try {
+            echo "Updating XML tags in file: ${XML_PATH}"
+
+            def tagNamesList  = TAG_NAMES.split(',')
+            def tagValuesList = TAG_VALUES.split(',')
+
+            if (tagNamesList.size() != tagValuesList.size()) {
+                error("Mismatch: TagNames count (${tagNamesList.size()}) ≠ TagValues count (${tagValuesList.size()})")
+            }
+
+            for (int i = 0; i < tagNamesList.size(); i++) {
+                def tag = tagNamesList[i].trim()
+                def val = tagValuesList[i].trim()
+                echo "Updating <${tag}> with value '${val}'"
+
+                bat """
+                    powershell -Command "(Get-Content '${XML_PATH}') -replace '<${tag}>.*?</${tag}>', '<${tag}>${val}</${tag}>' | Set-Content '${XML_PATH}'"
+                """
+            }
+
+            echo "All tags updated successfully."
+
+        } catch (err) {
+            echo "Error while updating XML: ${err}"
+            error("XML update failed.")
+        }
+    }
+
+    // -------------------------------
+    // Deploy Updated Metadata to Salesforce Org
+    // -------------------------------
+    stage('Deploy to Salesforce Org') {
+        try {
+            echo "Deploying only the updated XML file to Salesforce Org: ${ORG_ALIAS}"
+
+            def deployExists = fileExists(XML_PATH)
+            if (!deployExists) {
+                error "Deployment failed: File not found at ${XML_PATH}"
+            }
+
             if (isUnix()) {
                 sh """
-                    mkdir -p "${BACKUP_DIR}"
-                    cp "${XML_PATH}" "${backupFile}"
+                    echo "Deploying ${XML_PATH} to org ${ORG_ALIAS}..."
+                    sf project deploy start --target-org ${ORG_ALIAS} --source-dir "${XML_PATH}" --wait 10
                 """
             } else {
                 bat """
-                    if not exist "${BACKUP_DIR}" mkdir "${BACKUP_DIR}"
-                    if exist "${XML_PATH}" (
-                        copy /Y "${XML_PATH}" "${BACKUP_DIR}\\"
-                    ) else (
-                        echo XML file not found: ${XML_PATH}
-                        exit /b 1
-                    )
+                    echo Deploying ${XML_PATH} to org ${ORG_ALIAS}...
+                    sf project deploy start --target-org %OrgAlias% --source-dir "${XML_PATH}" --wait 10
                 """
             }
-            echo "✅ Backup created at: ${backupFile}"
-        }
 
-        // -------------------------------
-        // Read and update XML tags
-        // -------------------------------
-        stage('Update XML Tags and Show Changes') {
-            def xmlContent = readFile(XML_PATH)
-
-            for (int i = 0; i < tagList.size(); i++) {
-                def tag = tagList[i]
-                def newValue = valueList[i]
-                def pattern = /<${tag}>(.*?)<\/${tag}>/
-                def matcher = (xmlContent =~ pattern)
-                if (matcher) {
-                    def oldValue = matcher[0][1]
-                    echo "🔸 Tag <${tag}> — Old: ${oldValue} → New: ${newValue}"
-                    xmlContent = xmlContent.replaceAll(pattern, "<${tag}>${newValue}</${tag}>")
-                } else {
-                    echo "⚠️ Tag <${tag}> not found in XML — skipping"
-                }
-            }
-
-            writeFile(file: XML_PATH, text: xmlContent)
-        }
-
-        // -------------------------------
-        // Detect XML differences
-        // -------------------------------
-        stage('Detect XML Changes') {
-            def diffOutput = ""
-            if (isUnix()) {
-                diffOutput = sh(script: "diff \"${backupFile}\" \"${XML_PATH}\" || true", returnStdout: true).trim()
-            } else {
-                diffOutput = bat(script: "fc \"${backupFile}\" \"${XML_PATH}\" || exit /b 0", returnStdout: true).trim()
-            }
-
-            if (!diffOutput) {
-                echo "✅ No changes detected — skipping commit and deploy."
-                currentBuild.result = 'SUCCESS'
-                return
-            }
-
-            echo "🟡 Changes detected — showing diff snippet:"
-            echo diffOutput.take(1000)
-        }
-
-        // -------------------------------
-        // Commit & push both XML and backup
-        // -------------------------------
-        stage('Commit and Push Changes to GitHub') {
-            echo "Pushing updated XML and backup to branch: ${GIT_BRANCH}"
-            if (isUnix()) {
-                sh """
-                    git config user.email "jenkins@example.com"
-                    git config user.name "Jenkins CI"
-                    git checkout -B ${GIT_BRANCH}
-                    git add "${XML_PATH}" "${BACKUP_DIR}"
-                    git commit -m "Updated ${xmlFileName} and created backup (build #${env.BUILD_ID})" || echo "No changes to commit"
-                    git push -u origin ${GIT_BRANCH}
-                """
-            } else {
-                bat """
-                    git config user.email "jenkins@example.com"
-                    git config user.name "Jenkins CI"
-                    git checkout -B ${GIT_BRANCH}
-                    git add "${XML_PATH}" "${BACKUP_DIR}"
-                    git commit -m "Updated ${xmlFileName} and created backup (build #${env.BUILD_ID})" || echo No changes to commit
-                    git push -u origin ${GIT_BRANCH}
-                """
-            }
-            echo "✅ Backup and updated XML pushed to GitHub branch: ${GIT_BRANCH}"
-            echo "📁 View backups at: https://github.com/madhus-git/sfSecuritySettingsUpdate/tree/${GIT_BRANCH}/backups"
-        }
-
-        // -------------------------------
-        // Salesforce authentication & deploy
-        // -------------------------------
-        stage('Authenticate & Deploy to Salesforce') {
-            echo "Authenticating Salesforce Org: ${ORG_ALIAS}"
-            withCredentials([
-                string(credentialsId: 'sfdc-consumer-key', variable: 'CONNECTED_APP_CONSUMER_KEY'),
-                string(credentialsId: 'sfdc-username', variable: 'SFDC_USERNAME'),
-                file(credentialsId: 'sfdc-jwt-key', variable: 'JWT_KEY_FILE')
-            ]) {
-                if (isUnix()) {
-                    sh """
-                        sf org login jwt \
-                            --client-id ${CONNECTED_APP_CONSUMER_KEY} \
-                            --jwt-key-file ${JWT_KEY_FILE} \
-                            --username ${SFDC_USERNAME} \
-                            --alias ${ORG_ALIAS} \
-                            --instance-url ${ORG_URL}
-                    """
-                } else {
-                    bat """
-                        sf org login jwt ^
-                            --client-id %CONNECTED_APP_CONSUMER_KEY% ^
-                            --jwt-key-file %JWT_KEY_FILE% ^
-                            --username %SFDC_USERNAME% ^
-                            --alias %OrgAlias% ^
-                            --instance-url ${ORG_URL}
-                    """
-                }
-            }
-
-            echo "🚀 Deploying updated XML file to Salesforce Org: ${ORG_ALIAS}"
-            if (isUnix()) {
-                sh "sf project deploy start --target-org ${ORG_ALIAS} --source-dir \"${XML_PATH}\" --wait 10"
-            } else {
-                bat "sf project deploy start --target-org %OrgAlias% --source-dir \"${XML_PATH}\" --wait 10"
-            }
-        }
-
-    } catch (err) {
-        echo "❌ Error encountered: ${err}"
-        currentBuild.result = 'FAILURE'
-        throw err
-    } finally {
-        stage('Clean Workspace') {
-            echo "🧹 Cleaning workspace..."
-            cleanWs()
+        } catch (err) {
+            echo "Deployment failed: ${err}"
+            error("Salesforce deployment failed.")
         }
     }
 }
