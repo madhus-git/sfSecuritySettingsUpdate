@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <SecuritySettings xmlns="http://soap.sforce.com/2006/04/metadata">
-  <canUsersGrantLoginAccess>false</canUsersGrantLoginAccess>
+  <canUsersGrantLoginAccess>true</canUsersGrantLoginAccess>
   <enableAdminLoginAsAnyUser>false</enableAdminLoginAsAnyUser>
   <enableAuditFieldsInactiveOwner>false</enableAuditFieldsInactiveOwner>
   <enableAuraSecureEvalPref>true</enableAuraSecureEvalPref>
@@ -72,7 +72,7 @@
     <sendCspForUncommonClients>false</sendCspForUncommonClients>
     <sessionTimeout>TwoHours</sessionTimeout>
     <sidToken3rdPartyAuraApp>false</sidToken3rdPartyAuraApp>
-    <skipSFAWhenMFADirectUILogin>true</skipSFAWhenMFADirectUILogin>
+    <skipSFAWhenMFADirectUILogin>false</skipSFAWhenMFADirectUILogin>
     <terminateUserSessionsWhenAdminResetsPassword>false</terminateUserSessionsWhenAdminResetsPassword>
     <untrustedRedirect>AlwaysAllowed</untrustedRedirect>
     <useEAPIRateLimitForConnectAPI>false</useEAPIRateLimitForConnectAPI>
