@@ -1,6 +1,6 @@
 // ================================
 // Scripted Jenkins Pipeline (Secure JWT Auth via Jenkins Credentials)
-// Enhanced: /backups folder, auto absolute XML path, tag comparison
+// Enhanced: /backups folder, auto absolute XML path, tag comparison, tag-level change summary
 // ================================
 node {
 
@@ -113,7 +113,7 @@ node {
         }
 
         // -------------------------------
-        // Detect XML differences
+        // Detect XML differences (tag-level summary)
         // -------------------------------
         stage('Detect XML Changes') {
             def diffOutput = ""
@@ -124,13 +124,49 @@ node {
             }
 
             if (!diffOutput) {
-                echo "No changes detected — skipping commit and deploy."
+                echo "✅ No changes detected — skipping commit and deploy."
                 currentBuild.result = 'SUCCESS'
                 return
             }
 
-            echo "Changes detected — showing diff snippet:"
-            echo diffOutput.take(1000)
+            echo "🔍 Changes detected — analyzing tag differences..."
+
+            // Extract changed XML lines and show before/after for tags
+            def tagDiffs = []
+            def tagPattern = /<(\w+)>(.*?)<\/\1>/
+            def lines = diffOutput.readLines()
+
+            String currentTag = ""
+            String beforeValue = ""
+            String afterValue = ""
+
+            for (line in lines) {
+                if (line.startsWith("*****")) continue
+                def m = line =~ tagPattern
+                if (m.find()) {
+                    currentTag = m[0][1]
+                    if (line.contains("BACKUP_") || line.trim().startsWith("<")) {
+                        beforeValue = m[0][2]
+                    } else if (line.contains("WORKSPACE") || line.trim().startsWith("<")) {
+                        afterValue = m[0][2]
+                    }
+                    if (beforeValue && afterValue) {
+                        tagDiffs << [tag: currentTag, oldVal: beforeValue, newVal: afterValue]
+                        beforeValue = ""
+                        afterValue = ""
+                    }
+                }
+            }
+
+            if (tagDiffs) {
+                echo "🧾 Tag-level changes summary:"
+                tagDiffs.each { diff ->
+                    echo "  • <${diff.tag}>: '${diff.oldVal}' → '${diff.newVal}'"
+                }
+            } else {
+                echo "⚠️ No tag-level changes could be parsed. Raw diff output below:"
+                echo diffOutput.take(1000)
+            }
         }
 
         // -------------------------------
@@ -180,11 +216,11 @@ node {
                     """
                 } else {
                     bat """
-                        sf org login jwt ^
-                            --client-id %CONNECTED_APP_CONSUMER_KEY% ^
-                            --jwt-key-file %JWT_KEY_FILE% ^
-                            --username %SFDC_USERNAME% ^
-                            --alias %OrgAlias% ^
+                        sf org login jwt ^ 
+                            --client-id %CONNECTED_APP_CONSUMER_KEY% ^ 
+                            --jwt-key-file %JWT_KEY_FILE% ^ 
+                            --username %SFDC_USERNAME% ^ 
+                            --alias %OrgAlias% ^ 
                             --instance-url ${ORG_URL}
                     """
                 }
@@ -199,7 +235,7 @@ node {
         }
 
     } catch (err) {
-        echo "Error encountered: ${err}"
+        echo "❌ Error encountered: ${err}"
         currentBuild.result = 'FAILURE'
         throw err
     } finally {
