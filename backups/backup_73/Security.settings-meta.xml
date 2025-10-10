@@ -72,7 +72,7 @@
     <sendCspForUncommonClients>false</sendCspForUncommonClients>
     <sessionTimeout>TwoHours</sessionTimeout>
     <sidToken3rdPartyAuraApp>false</sidToken3rdPartyAuraApp>
-    <skipSFAWhenMFADirectUILogin>true</skipSFAWhenMFADirectUILogin>
+    <skipSFAWhenMFADirectUILogin>false</skipSFAWhenMFADirectUILogin>
     <terminateUserSessionsWhenAdminResetsPassword>false</terminateUserSessionsWhenAdminResetsPassword>
     <untrustedRedirect>AlwaysAllowed</untrustedRedirect>
     <useEAPIRateLimitForConnectAPI>false</useEAPIRateLimitForConnectAPI>
