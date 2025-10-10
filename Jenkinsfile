@@ -124,12 +124,26 @@ node {
                 }
 
                 // Deploy the directory containing the XML
-                def deployDir = new File(XML_PATH).parent
-                if (isUnix()) {
-                    sh "sf project deploy start --target-org ${ORG_ALIAS} --source-dir '${deployDir}' --wait 10"
-                } else {
-                    bat "sf project deploy start --target-org %SF_ALIAS% --source-dir \"${deployDir}\" --wait 10"
-                }
+                //def deployDir = new File(XML_PATH).parent
+                echo "Deploying only the updated XML file to Salesforce Org: ${ORG_ALIAS}"
+
+            def deployExists = fileExists(XML_PATH)
+            if (!deployExists) {
+                error "Deployment failed: File not found at ${XML_PATH}"
+            }
+
+            if (isUnix()) {
+                sh """
+                    echo "Deploying ${XML_PATH} to org ${ORG_ALIAS}..."
+                    sf project deploy start --target-org ${ORG_ALIAS} --source-dir "${XML_PATH}" --wait 10
+                """
+            } else {
+                bat """
+                    echo Deploying ${XML_PATH} to org ${ORG_ALIAS}...
+                    sf project deploy start --target-org %OrgAlias% --source-dir "${XML_PATH}" --wait 10
+                """
+            }
+
             }
         }
 
