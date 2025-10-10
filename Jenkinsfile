@@ -1,6 +1,6 @@
 // ================================
 // Scripted Jenkins Pipeline (Secure JWT Auth via Jenkins Credentials)
-// Enhanced: Backup under /backups, Show Old/New Tag Values, Org URL support
+// Enhanced: /backups folder, auto absolute XML path, tag comparison
 // ================================
 node {
 
@@ -8,10 +8,10 @@ node {
         parameters([
             string(name: 'OrgAlias', defaultValue: '', description: '* Salesforce Org Alias / Username'),
             string(name: 'OrgUrl', defaultValue: 'https://login.salesforce.com', description: '* Salesforce Org URL'),
-            string(name: 'XMLFilePath', defaultValue: '', description: '* Path to XML file to update'),
+            string(name: 'XMLFilePath', defaultValue: '', description: '* Path to XML file to update (e.g. force-app/main/default/settings/Security.settings-meta.xml)'),
             string(name: 'TagNames', defaultValue: '', description: '* Comma-separated XML tag names (e.g. tag1,tag2)'),
-            string(name: 'TagValues', defaultValue: '', description: '* Comma-separated tag values (e.g. value1,value2)'),
-            string(name: 'BranchName', defaultValue: '', description: '* Git branch to push changes')
+            string(name: 'TagValues', defaultValue: '', description: '* Comma-separated XML tag values (e.g. value1,value2)'),
+            string(name: 'BranchName', defaultValue: '', description: '* Git branch to push changes (e.g. devOrg)')
         ])
     ])
 
@@ -26,9 +26,8 @@ node {
     def backupFile = "${BACKUP_DIR}/${xmlFileName}"
 
     try {
-
         // -------------------------------
-        // Validate mandatory params
+        // Validate mandatory parameters
         // -------------------------------
         if (!ORG_ALIAS) error "OrgAlias is mandatory"
         if (!ORG_URL) error "OrgUrl is mandatory"
@@ -43,15 +42,33 @@ node {
             error "Number of TagNames (${tagList.size()}) must match TagValues (${valueList.size()})"
         }
 
+        // -------------------------------
+        // Checkout code
+        // -------------------------------
         stage('Checkout Code') {
             echo "Checking out source code..."
             checkout scm
         }
 
         // -------------------------------
-        // Create centralized backup folder under /backups
+        // Ensure XML path is absolute (workspace-aware)
         // -------------------------------
-        stage('Backup XML to /backups folder') {
+        if (!XML_PATH.startsWith('/') && !XML_PATH.matches('^[A-Za-z]:.*')) {
+            XML_PATH = "${env.WORKSPACE}/${XML_PATH}"
+        }
+        if (!isUnix()) {
+            XML_PATH = XML_PATH.replace('/', '\\')
+            BACKUP_DIR = BACKUP_DIR.replace('/', '\\')
+            backupFile = backupFile.replace('/', '\\')
+        }
+
+        echo "Resolved XML Path: ${XML_PATH}"
+        echo "Backup Directory: ${BACKUP_DIR}"
+
+        // -------------------------------
+        // Backup XML under /backups
+        // -------------------------------
+        stage('Backup XML to /backups') {
             echo "Creating backup folder under repo: ${BACKUP_DIR}"
             if (isUnix()) {
                 sh """
@@ -61,18 +78,22 @@ node {
             } else {
                 bat """
                     if not exist "${BACKUP_DIR}" mkdir "${BACKUP_DIR}"
-                    copy /Y "${XML_PATH}" "${backupFile}" >nul
+                    if exist "${XML_PATH}" (
+                        copy /Y "${XML_PATH}" "${BACKUP_DIR}\\"
+                    ) else (
+                        echo XML file not found: ${XML_PATH}
+                        exit /b 1
+                    )
                 """
             }
             echo "✅ Backup created at: ${backupFile}"
         }
 
         // -------------------------------
-        // Read original XML and update tags
+        // Read and update XML tags
         // -------------------------------
-        stage('Update XML Tags and Display Changes') {
+        stage('Update XML Tags and Show Changes') {
             def xmlContent = readFile(XML_PATH)
-            def originalXml = xmlContent
 
             for (int i = 0; i < tagList.size(); i++) {
                 def tag = tagList[i]
@@ -81,10 +102,10 @@ node {
                 def matcher = (xmlContent =~ pattern)
                 if (matcher) {
                     def oldValue = matcher[0][1]
-                    echo "🔸 Tag: <${tag}> | Old Value: ${oldValue} | New Value: ${newValue}"
+                    echo "🔸 Tag <${tag}> — Old: ${oldValue} → New: ${newValue}"
                     xmlContent = xmlContent.replaceAll(pattern, "<${tag}>${newValue}</${tag}>")
                 } else {
-                    echo "⚠️ Tag <${tag}> not found in XML, skipping..."
+                    echo "⚠️ Tag <${tag}> not found in XML — skipping"
                 }
             }
 
@@ -92,7 +113,7 @@ node {
         }
 
         // -------------------------------
-        // Compare with backup and detect changes
+        // Detect XML differences
         // -------------------------------
         stage('Detect XML Changes') {
             def diffOutput = ""
@@ -108,22 +129,22 @@ node {
                 return
             }
 
-            echo "🟡 Changes detected between original and updated XML:"
-            echo "${diffOutput.take(1000)}" // limit for readability
+            echo "🟡 Changes detected — showing diff snippet:"
+            echo diffOutput.take(1000)
         }
 
         // -------------------------------
-        // Commit and Push to GitHub (includes backups)
+        // Commit & push both XML and backup
         // -------------------------------
-        stage('Push Changes to GitHub') {
-            echo "Committing XML & backup files to branch: ${GIT_BRANCH}"
+        stage('Commit and Push Changes to GitHub') {
+            echo "Pushing updated XML and backup to branch: ${GIT_BRANCH}"
             if (isUnix()) {
                 sh """
                     git config user.email "jenkins@example.com"
                     git config user.name "Jenkins CI"
                     git checkout -B ${GIT_BRANCH}
-                    git add "${XML_PATH}" "${BACKUP_DIR}/${xmlFileName}"
-                    git commit -m "Updated ${xmlFileName} and backed up under /backups via Jenkins build #${env.BUILD_ID}" || echo "No changes"
+                    git add "${XML_PATH}" "${BACKUP_DIR}"
+                    git commit -m "Updated ${xmlFileName} and created backup (build #${env.BUILD_ID})" || echo "No changes to commit"
                     git push -u origin ${GIT_BRANCH}
                 """
             } else {
@@ -131,19 +152,19 @@ node {
                     git config user.email "jenkins@example.com"
                     git config user.name "Jenkins CI"
                     git checkout -B ${GIT_BRANCH}
-                    git add "${XML_PATH}" "${BACKUP_DIR}\\${xmlFileName}"
-                    git commit -m "Updated ${xmlFileName} and backed up under /backups via Jenkins build #${env.BUILD_ID}" || echo No changes
+                    git add "${XML_PATH}" "${BACKUP_DIR}"
+                    git commit -m "Updated ${xmlFileName} and created backup (build #${env.BUILD_ID})" || echo No changes to commit
                     git push -u origin ${GIT_BRANCH}
                 """
             }
-            echo "✅ Backup & updated XML pushed to GitHub branch: ${GIT_BRANCH}"
-            echo "📁 View backups here: https://github.com/madhus-git/sfSecuritySettingsUpdate/tree/${GIT_BRANCH}/backups"
+            echo "✅ Backup and updated XML pushed to GitHub branch: ${GIT_BRANCH}"
+            echo "📁 View backups at: https://github.com/madhus-git/sfSecuritySettingsUpdate/tree/${GIT_BRANCH}/backups"
         }
 
         // -------------------------------
-        // Salesforce authentication and deploy
+        // Salesforce authentication & deploy
         // -------------------------------
-        stage('Authenticate & Deploy') {
+        stage('Authenticate & Deploy to Salesforce') {
             echo "Authenticating Salesforce Org: ${ORG_ALIAS}"
             withCredentials([
                 string(credentialsId: 'sfdc-consumer-key', variable: 'CONNECTED_APP_CONSUMER_KEY'),
