@@ -9,12 +9,12 @@ node {
     // -------------------------------
     properties([
         parameters([
-            string(name: 'OrgAlias', defaultValue: '', description: 'Salesforce Org Alias / Username'),
-            string(name: 'OrgUrl', defaultValue: 'https://login.salesforce.com', description: 'Salesforce Org URL (e.g. https://login.salesforce.com or https://test.salesforce.com)'),
-            string(name: 'XMLFilePath', defaultValue: '', description: 'Path to XML file to update'),
-            string(name: 'TagNames', defaultValue: '', description: 'Comma-separated XML tag names to update (e.g. tag1,tag2)'),
-            string(name: 'TagValues', defaultValue: '', description: 'Comma-separated XML tag values (e.g. value1,value2)'),
-            string(name: 'BranchName', defaultValue: '', description: 'Git branch to push changes')
+            string(name: 'OrgAlias', defaultValue: '', description: '* Salesforce Org Alias / Username'),
+            string(name: 'OrgUrl', defaultValue: 'https://login.salesforce.com', description: '* Salesforce Org URL (e.g. https://login.salesforce.com or https://test.salesforce.com)'),
+            string(name: 'XMLFilePath', defaultValue: '', description: '* Path to XML file to update'),
+            string(name: 'TagNames', defaultValue: '', description: '* Comma-separated XML tag names to update (e.g. tag1,tag2)'),
+            string(name: 'TagValues', defaultValue: '', description: '* Comma-separated XML tag values (e.g. value1,value2)'),
+            string(name: 'BranchName', defaultValue: '', description: '* Git branch to push changes')
         ])
     ])
 
