@@ -60,7 +60,7 @@ node {
 
         stage('Update XML Tags and Show Changes') {
             def xmlContent = readFile(XML_PATH)
-            echo "🔹 Tag-level changes summary:"
+            echo "Tag-level changes summary:"
             for (int i = 0; i < tagList.size(); i++) {
                 def tag = tagList[i]
                 def newValue = valueList[i]
@@ -68,10 +68,10 @@ node {
                 def matcher = (xmlContent =~ pattern)
                 if (matcher) {
                     def oldValue = matcher[0][1]
-                    echo "  • <${tag}> — Old: ${oldValue} → New: ${newValue}"
+                    echo "Tag Name <${tag}> — Old Value :: ${oldValue} → New Value :: ${newValue}"
                     xmlContent = xmlContent.replaceAll(pattern, "<${tag}>${newValue}</${tag}>")
                 } else {
-                    echo "  • <${tag}> not found — skipping"
+                    echo "Tag Name <${tag}> not found — skipping"
                 }
             }
             writeFile(file: XML_PATH, text: xmlContent)
@@ -127,28 +127,26 @@ node {
                 //def deployDir = new File(XML_PATH).parent
                 echo "Deploying only the updated XML file to Salesforce Org: ${ORG_ALIAS}"
 
-            def deployExists = fileExists(XML_PATH)
-            if (!deployExists) {
-                error "Deployment failed: File not found at ${XML_PATH}"
-            }
+                def deployExists = fileExists(XML_PATH)
+                if (!deployExists) {
+                    error "Deployment failed: File not found at ${XML_PATH}"
+                }
 
-            if (isUnix()) {
-                sh """
-                    echo "Deploying ${XML_PATH} to org ${ORG_ALIAS}..."
-                    sf project deploy start --target-org ${ORG_ALIAS} --source-dir "${XML_PATH}" --wait 10
-                """
-            } else {
-                bat """
-                    echo Deploying ${XML_PATH} to org ${ORG_ALIAS}...
-                    sf project deploy start --target-org %OrgAlias% --source-dir "${XML_PATH}" --wait 10
-                """
-            }
-
+                if (isUnix()) {
+                    sh """
+                        echo "Deploying ${XML_PATH} to org ${ORG_ALIAS}..."
+                        sf project deploy start --target-org ${ORG_ALIAS} --source-dir "${XML_PATH}" --wait 10
+                    """
+                } else {
+                    bat """
+                        echo Deploying ${XML_PATH} to org ${ORG_ALIAS}...
+                        sf project deploy start --target-org %OrgAlias% --source-dir "${XML_PATH}" --wait 10
+                    """
+                }
             }
         }
-
     } catch (err) {
-        echo "❌ Error: ${err}"
+        echo "Error: ${err}"
         currentBuild.result = 'FAILURE'
         throw err
     } finally {
