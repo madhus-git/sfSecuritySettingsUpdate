@@ -68,7 +68,7 @@
         <redirectBlockModeEnabled>false</redirectBlockModeEnabled>
         <redirectionWarning>true</redirectionWarning>
         <referrerPolicy>true</referrerPolicy>
-        <referrerPolicyDirective>no-referrer</referrerPolicyDirective>
+        <referrerPolicyDirective>true</referrerPolicyDirective>
         <requireHttpOnly>true</requireHttpOnly>
         <sendCspForUncommonClients>false</sendCspForUncommonClients>
         <sessionTimeout>ThirtyMinutes</sessionTimeout>
