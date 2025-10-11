@@ -47,6 +47,7 @@
         <enableOauthCorsPolicy>false</enableOauthCorsPolicy>
         <enablePermissionsPolicy>false</enablePermissionsPolicy>
         <enablePostForSessions>true</enablePostForSessions>
+        <enableXssProtection>true</enableXssProtection>
         <enableSMSIdentity>true</enableSMSIdentity>
         <enableU2F>true</enableU2F>
         <enforceIpRangesEveryRequest>false</enforceIpRangesEveryRequest>
