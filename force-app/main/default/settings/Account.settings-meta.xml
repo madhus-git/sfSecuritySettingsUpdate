@@ -6,4 +6,5 @@
     <enableContactHistoryTracking>false</enableContactHistoryTracking>
     <enableRelateContactToMultipleAccounts>false</enableRelateContactToMultipleAccounts>
     <showViewHierarchyLink>true</showViewHierarchyLink>
+    <enableAccountOwnerReport>false</enableAccountOwnerReport>
 </AccountSettings>

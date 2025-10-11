@@ -13,7 +13,8 @@
     <enableGaplessTestAutoNum>true</enableGaplessTestAutoNum>
     <enableMngdCtrlActionAccessPref>false</enableMngdCtrlActionAccessPref>
     <enableNonCertifiedApexMdCrud>false</enableNonCertifiedApexMdCrud>
-    <enableRestrictCommunityExecAnon>false</enableRestrictCommunityExecAnon>
+    <enableRestrictCommunityExecAnon>true</enableRestrictCommunityExecAnon>
     <enableSecureNoArgConstructorPref>false</enableSecureNoArgConstructorPref>
     <enableTestSetupSkipTestResults>false</enableTestSetupSkipTestResults>
+    <enableDoNotEmailDebugLog>true</enableDoNotEmailDebugLog>
 </ApexSettings>
