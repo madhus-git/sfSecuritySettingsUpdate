@@ -3,7 +3,7 @@
     <enableCanAnswerContainUsername>true</enableCanAnswerContainUsername>
     <enableConcealPersonalInfo>true</enableConcealPersonalInfo>
     <enableContactlessExternalIdentityUsers>false</enableContactlessExternalIdentityUsers>
-    <enableEnhancedConcealPersonalInfo>true</enableEnhancedConcealPersonalInfo>
+    <enableEnhancedConcealPersonalInfo>false</enableEnhancedConcealPersonalInfo>
     <enableEnhancedPermsetMgmt>false</enableEnhancedPermsetMgmt>
     <enableEnhancedProfileMgmt>true</enableEnhancedProfileMgmt>
     <enableEnhcUiUserAccessPolicies>false</enableEnhcUiUserAccessPolicies>
@@ -19,5 +19,5 @@
     <permsetsInFieldCreation>false</permsetsInFieldCreation>
     <psaExpirationUIEnabled>true</psaExpirationUIEnabled>
     <restrictedProfileCloning>false</restrictedProfileCloning>
-    <userAccessPoliciesEnabled>true</userAccessPoliciesEnabled>
+    <userAccessPoliciesEnabled>false</userAccessPoliciesEnabled>
 </UserManagementSettings>
