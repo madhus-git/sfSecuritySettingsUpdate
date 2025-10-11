@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <SecuritySettings xmlns="http://soap.sforce.com/2006/04/metadata">
-  <canUsersGrantLoginAccess>false</canUsersGrantLoginAccess>
+  <canUsersGrantLoginAccess>true</canUsersGrantLoginAccess>
   <enableAdminLoginAsAnyUser>false</enableAdminLoginAsAnyUser>
   <enableAuditFieldsInactiveOwner>false</enableAuditFieldsInactiveOwner>
   <enableAuraSecureEvalPref>true</enableAuraSecureEvalPref>
@@ -30,7 +30,7 @@
     <canConfirmIdentityBySmsOnly>true</canConfirmIdentityBySmsOnly>
     <disableTimeoutWarning>false</disableTimeoutWarning>
     <enableBuiltInAuthenticator>true</enableBuiltInAuthenticator>
-    <enableCSPOnEmail>true</enableCSPOnEmail>
+    <enableCSPOnEmail>false</enableCSPOnEmail>
     <enableCSRFOnGet>true</enableCSRFOnGet>
     <enableCSRFOnPost>true</enableCSRFOnPost>
     <enableCacheAndAutocomplete>true</enableCacheAndAutocomplete>
