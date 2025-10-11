@@ -7,7 +7,7 @@
     <enableCoepHeader>false</enableCoepHeader>
     <enableCoopHeader>false</enableCoopHeader>
     <enableCrossOrgRedirects>false</enableCrossOrgRedirects>
-    <enablePermissionsPolicy>true</enablePermissionsPolicy>
+    <enablePermissionsPolicy>false</enablePermissionsPolicy>
     <enableRequireHttpsConnection>true</enableRequireHttpsConnection>
     <networkAccess/>
     <passwordPolicies>
@@ -41,11 +41,11 @@
         <enableCoepHeader>false</enableCoepHeader>
         <enableContentSniffingProtection>true</enableContentSniffingProtection>
         <enableCoopHeader>false</enableCoopHeader>
-        <enableLightningLogin>false</enableLightningLogin>
+        <enableLightningLogin>true</enableLightningLogin>
         <enableLightningLoginOnlyWithUserPerm>false</enableLightningLoginOnlyWithUserPerm>
         <enableMFADirectUILoginOptIn>false</enableMFADirectUILoginOptIn>
         <enableOauthCorsPolicy>true</enableOauthCorsPolicy>
-        <enablePermissionsPolicy>true</enablePermissionsPolicy>
+        <enablePermissionsPolicy>false</enablePermissionsPolicy>
         <enablePostForSessions>true</enablePostForSessions>
         <enableXssProtection>true</enableXssProtection>
         <enableSMSIdentity>true</enableSMSIdentity>
@@ -57,7 +57,7 @@
         <grantCameraAccess>TrustedUrls</grantCameraAccess>
         <grantMicrophoneAccess>TrustedUrls</grantMicrophoneAccess>
         <hasRetainedLoginHints>false</hasRetainedLoginHints>
-        <hasUserSwitching>false</hasUserSwitching>
+        <hasUserSwitching>true</hasUserSwitching>
         <identityConfirmationOnEmailChange>true</identityConfirmationOnEmailChange>
         <identityConfirmationOnTwoFactorRegistrationEnabled>true</identityConfirmationOnTwoFactorRegistrationEnabled>
         <lockSessionsToDomain>true</lockSessionsToDomain>
@@ -68,13 +68,13 @@
         <redirectBlockModeEnabled>false</redirectBlockModeEnabled>
         <redirectionWarning>true</redirectionWarning>
         <referrerPolicy>true</referrerPolicy>
-        <referrerPolicyDirective>true</referrerPolicyDirective>
+        <referrerPolicyDirective>origin-when-cross-origin</referrerPolicyDirective>
         <requireHttpOnly>true</requireHttpOnly>
         <sendCspForUncommonClients>false</sendCspForUncommonClients>
         <sessionTimeout>ThirtyMinutes</sessionTimeout>
         <sidToken3rdPartyAuraApp>false</sidToken3rdPartyAuraApp>
         <skipSFAWhenMFADirectUILogin>true</skipSFAWhenMFADirectUILogin>
-        <terminateUserSessionsWhenAdminResetsPassword>true</terminateUserSessionsWhenAdminResetsPassword>
+        <terminateUserSessionsWhenAdminResetsPassword>false</terminateUserSessionsWhenAdminResetsPassword>
         <untrustedRedirect>AlwaysAllowed</untrustedRedirect>
         <useEAPIRateLimitForConnectAPI>false</useEAPIRateLimitForConnectAPI>
         <useLocalStorageForLogoutUrl>false</useLocalStorageForLogoutUrl>
