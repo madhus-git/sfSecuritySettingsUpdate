@@ -85,5 +85,6 @@
         <enableSamlJitProvisioning>false</enableSamlJitProvisioning>
         <enableSamlLogin>false</enableSamlLogin>
         <isLoginWithSalesforceCredentialsDisabled>false</isLoginWithSalesforceCredentialsDisabled>
+        <enableForceDelegatedCallout>false</enableForceDelegatedCallout>
     </singleSignOnSettings>
 </SecuritySettings>
