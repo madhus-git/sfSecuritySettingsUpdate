@@ -3,5 +3,5 @@
     <enableAdvancedCMTSecurity>true</enableAdvancedCMTSecurity>
     <enableAdvancedCSSecurity>true</enableAdvancedCSSecurity>
     <enableListCustomSettingCreation>false</enableListCustomSettingCreation>
-    <enableSOSLOnCustomSettings>false</enableSOSLOnCustomSettings>
+    <enableSOSLOnCustomSettings>true</enableSOSLOnCustomSettings>
 </SchemaSettings>
