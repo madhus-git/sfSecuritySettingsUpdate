@@ -2,8 +2,8 @@
 <MyDomainSettings xmlns="http://soap.sforce.com/2006/04/metadata">
     <areLegacyRedirectsMaintained>false</areLegacyRedirectsMaintained>
     <areLgcyRdirMaintainedWntr26>false</areLgcyRdirMaintainedWntr26>
-    <canOnlyLoginWithMyDomainUrl>false</canOnlyLoginWithMyDomainUrl>
-    <doesApiLoginRequireOrgDomain>false</doesApiLoginRequireOrgDomain>
+    <canOnlyLoginWithMyDomainUrl>true</canOnlyLoginWithMyDomainUrl>
+    <doesApiLoginRequireOrgDomain>true</doesApiLoginRequireOrgDomain>
     <doesWarnOnForceComRedirect>false</doesWarnOnForceComRedirect>
     <doesWarnOnRedirect>false</doesWarnOnRedirect>
     <domainPartition>develop</domainPartition>
@@ -16,7 +16,7 @@
     <enableShareBrowserSessionAndroidForAuth>false</enableShareBrowserSessionAndroidForAuth>
     <enableShareBrowserSessionIOSForAuth>false</enableShareBrowserSessionIOSForAuth>
     <instancedUrlRedirectHandling>NoRedirect</instancedUrlRedirectHandling>
-    <isFirstPartyCookieUseRequired>false</isFirstPartyCookieUseRequired>
+    <isFirstPartyCookieUseRequired>true</isFirstPartyCookieUseRequired>
     <isInstancedApiTrafficBlocked>true</isInstancedApiTrafficBlocked>
     <logRedirections>false</logRedirections>
     <myDomainName>orgfarm-dc35503cb2-dev-ed</myDomainName>
