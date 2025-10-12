@@ -3,10 +3,10 @@
     <bypassMeteringBlock>false</bypassMeteringBlock>
     <enableDeleteMonitoringData>false</enableDeleteMonitoringData>
     <enableDynamicStreamingChannel>false</enableDynamicStreamingChannel>
-    <enableEventLogGeneration>true</enableEventLogGeneration>
+    <enableEventLogGeneration>false</enableEventLogGeneration>
     <enableLightningLoggerEvents>false</enableLightningLoggerEvents>
     <enableLoginForensics>false</enableLoginForensics>
     <enableStreamingApi>true</enableStreamingApi>
-    <enableTransactionSecurityPolicies>true</enableTransactionSecurityPolicies>
-    <eventLogRetentionDuration>365</eventLogRetentionDuration>
+    <enableTransactionSecurityPolicies>false</enableTransactionSecurityPolicies>
+    <eventLogRetentionDuration>0</eventLogRetentionDuration>
 </EventSettings>
