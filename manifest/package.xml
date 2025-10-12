@@ -18,6 +18,8 @@
         <members>FileUploadAndDownloadSecurity</members>
         <members>UserManagement</members>
         <members>PermissionSet</members>
+        <members>Encryption</members>
+        <members>Identity</members>
         <!-- <members>SiteSettings</members> -->
         <name>Settings</name>
     </types>

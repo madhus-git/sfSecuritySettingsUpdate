@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Allows users to manage platform encryption related keys.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <label>Platform Encryption - Manage Encryption Keys</label>
+    <license>Salesforce</license>
+    <userPermissions>
+        <enabled>true</enabled>
+        <name>ManageEncryptionKeys</name>
+    </userPermissions>
+</PermissionSet>
