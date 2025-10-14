@@ -7,7 +7,7 @@
     <enableCoepHeader>false</enableCoepHeader>
     <enableCoopHeader>false</enableCoopHeader>
     <enableCrossOrgRedirects>false</enableCrossOrgRedirects>
-    <enablePermissionsPolicy>true</enablePermissionsPolicy>
+    <!--<enablePermissionsPolicy>true</enablePermissionsPolicy> -->
     <enableRequireHttpsConnection>true</enableRequireHttpsConnection>
     <networkAccess/>
     <passwordPolicies>

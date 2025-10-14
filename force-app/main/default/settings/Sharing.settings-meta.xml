@@ -13,4 +13,6 @@
     <enableRestrictAccessLookupRecords>true</enableRestrictAccessLookupRecords>
     <enableSecureGuestAccess>false</enableSecureGuestAccess>
     <enableStandardReportVisibility>false</enableStandardReportVisibility>
+    <enablePartnerSuperUserAccess>false</enablePartnerSuperUserAccess>
+    <enableExternalSharingModel>true</enableExternalSharingModel>
 </SharingSettings>
