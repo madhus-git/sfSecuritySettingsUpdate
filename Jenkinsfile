@@ -38,8 +38,8 @@ node {
     // Load credentials
     // --------------------------------------
     withCredentials([
-        string(credentialsId: 'fairwaydev2-consumer-key', variable: 'CONNECTED_APP_CONSUMER_KEY'),
-        string(credentialsId: 'fairwaydev2-username', variable: 'SFDC_USERNAME'),
+        string(credentialsId: 'fairwaydev1-consumer-key', variable: 'CONNECTED_APP_CONSUMER_KEY'),
+        string(credentialsId: 'fairwaydev1-username', variable: 'SFDC_USERNAME'),
         file(credentialsId: 'sfdc-jwt-key', variable: 'JWT_KEY_FILE')
     ]) {
 
