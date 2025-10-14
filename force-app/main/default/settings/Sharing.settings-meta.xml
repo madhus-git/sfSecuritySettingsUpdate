@@ -14,5 +14,5 @@
     <enableSecureGuestAccess>false</enableSecureGuestAccess>
     <enableStandardReportVisibility>false</enableStandardReportVisibility>
     <enablePartnerSuperUserAccess>false</enablePartnerSuperUserAccess>
-    <enableExternalSharingModel>true</enableExternalSharingModel>
+    <!--<enableExternalSharingModel>true</enableExternalSharingModel>-->
 </SharingSettings>
