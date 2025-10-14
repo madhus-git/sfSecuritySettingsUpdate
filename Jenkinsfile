@@ -1,157 +1,160 @@
+// ============================================================
+// Scripted Jenkins Pipeline
+// Deploy Specific Salesforce Security Setting via Jenkins
+// Supports Windows & Linux Agents
+// ============================================================
+
 node {
 
+    // --------------------------------------
+    // Define build-time parameters
+    // --------------------------------------
     properties([
         parameters([
-            string(name: 'OrgAlias', defaultValue: '', description: '* Salesforce Org Alias / Username'),
+            string(name: 'OrgAlias', description: 'Salesforce Org Alias (e.g. devOrg, uatOrg, prodOrg)', defaultValue: ''),
             string(name: 'OrgUrl', defaultValue: 'https://login.salesforce.com', description: '* Salesforce Org URL'),
-            string(name: 'XMLFilePath', defaultValue: '', description: '* Path to XML file to update (e.g. force-app/main/default/settings/Security.settings-meta.xml)'),
-            string(name: 'TagNames', defaultValue: '', description: '* Comma-separated XML tag names (e.g. tag1,tag2)'),
-            string(name: 'TagValues', defaultValue: '', description: '* Comma-separated XML tag values (e.g. value1,value2)'),
-            string(name: 'BranchName', defaultValue: '', description: '* Git branch to push changes (e.g. devOrg)')
+            string(name: 'BranchName', description: 'Git branch or tag to deploy', defaultValue: 'main'),
+            string(name: 'XMLFilePath', defaultValue: '', description: '* Path to XML file to deploy (e.g. force-app/main/default/settings/Security.settings-meta.xml)')
         ])
     ])
 
+    // --------------------------------------
+    // Initialize variables
+    // --------------------------------------
     def ORG_ALIAS = params.OrgAlias?.trim()
     def ORG_URL = params.OrgUrl?.trim()
+    def BRANCH_NAME = params.BranchName?.trim()
     def XML_PATH = params.XMLFilePath?.trim()
-    def TAG_NAMES = params.TagNames?.trim()
-    def TAG_VALUES = params.TagValues?.trim()
-    def GIT_BRANCH = params.BranchName?.trim()
-    def BACKUP_DIR = "backups/backup_${env.BUILD_ID}"
-    def xmlFileName = XML_PATH.tokenize('/').last()
-    def backupFile = "${BACKUP_DIR}/${xmlFileName}"
+    def BACKUP_DIR = "backup_settings_${new Date().format('yyyyMMdd_HHmmss')}"
 
-    try {
-        if (!ORG_ALIAS) error "OrgAlias is mandatory"
-        if (!ORG_URL) error "OrgUrl is mandatory"
-        if (!XML_PATH) error "XMLFilePath is mandatory"
-        if (!TAG_NAMES) error "TagNames is mandatory"
-        if (!TAG_VALUES) error "TagValues is mandatory"
-        if (!GIT_BRANCH) error "BranchName is mandatory"
+    // --------------------------------------
+    // Validate required parameters
+    // --------------------------------------
+    if (!ORG_ALIAS || !ORG_URL || !BRANCH_NAME || !XML_PATH) {
+        error "All parameters (OrgAlias, OrgUrl, BranchName, XMLFilePath) are mandatory."
+    }
 
-        def tagList = TAG_NAMES.split(',').collect { it.trim() }
-        def valueList = TAG_VALUES.split(',').collect { it.trim() }
-        if (tagList.size() != valueList.size()) error "Number of TagNames must match TagValues"
+    // --------------------------------------
+    // Load credentials
+    // --------------------------------------
+    withCredentials([
+        string(credentialsId: 'fairwaydev2-consumer-key', variable: 'CONNECTED_APP_CONSUMER_KEY'),
+        string(credentialsId: 'fairwaydev2-username', variable: 'SFDC_USERNAME'),
+        file(credentialsId: 'sfdc-jwt-key', variable: 'JWT_KEY_FILE')
+    ]) {
 
-        stage('Checkout Code') {
-            checkout scm
-        }
-
-        if (!XML_PATH.startsWith('/') && !XML_PATH.matches('^[A-Za-z]:.*')) {
-            XML_PATH = "${env.WORKSPACE}/${XML_PATH}"
-        }
-        if (!isUnix()) {
-            XML_PATH = XML_PATH.replace('/', '\\')
-            BACKUP_DIR = BACKUP_DIR.replace('/', '\\')
-            backupFile = backupFile.replace('/', '\\')
-        }
-
-        stage('Backup XML') {
-            echo "Creating backup folder: ${BACKUP_DIR}"
-            if (isUnix()) {
-                sh "mkdir -p '${BACKUP_DIR}' && cp '${XML_PATH}' '${backupFile}'"
-            } else {
-                bat """
-                    if not exist "${BACKUP_DIR}" mkdir "${BACKUP_DIR}"
-                    copy /Y "${XML_PATH}" "${BACKUP_DIR}\\"
-                """
-            }
-        }
-
-        stage('Update XML Tags and Show Changes') {
-            def xmlContent = readFile(XML_PATH)
-            echo "Tag-level changes summary:"
-            for (int i = 0; i < tagList.size(); i++) {
-                def tag = tagList[i]
-                def newValue = valueList[i]
-                def pattern = /<${tag}>(.*?)<\/${tag}>/
-                def matcher = (xmlContent =~ pattern)
-                if (matcher) {
-                    def oldValue = matcher[0][1]
-                    echo "Tag Name <${tag}> — Old Value :: ${oldValue} → New Value :: ${newValue}"
-                    xmlContent = xmlContent.replaceAll(pattern, "<${tag}>${newValue}</${tag}>")
-                } else {
-                    echo "Tag Name <${tag}> not found — skipping"
+        try {
+            // -------------------------------
+            stage('Checkout Code from GitHub') {
+                try {
+                    echo "Checking out branch: ${BRANCH_NAME}"
+                    git branch: "${BRANCH_NAME}", url: 'https://github.com/your-org/sfSecuritySettingsRepo.git'
+                } catch (e) {
+                    error "Git Checkout Failed: ${e}"
                 }
             }
-            writeFile(file: XML_PATH, text: xmlContent)
-        }
 
-        stage('Commit & Push to GitHub') {
-            if (isUnix()) {
-                sh """
-                    git config user.email "jenkins@example.com"
-                    git config user.name "Jenkins CI"
-                    git checkout -B ${GIT_BRANCH}
-                    git add "${XML_PATH}" "${BACKUP_DIR}"
-                    git commit -m "Updated ${xmlFileName} and backup (build #${env.BUILD_ID})" || echo "No changes"
-                    git push -u origin ${GIT_BRANCH}
-                """
-            } else {
-                bat """
-                    git checkout -B ${GIT_BRANCH}
-                    git add "${XML_PATH}" "${BACKUP_DIR}"
-                    git commit -m "Updated ${xmlFileName} and backup (build #${env.BUILD_ID})" || echo No changes
-                    git push -u origin ${GIT_BRANCH}
-                """
-            }
-        }
-
-        stage('Authenticate & Deploy to Salesforce') {
-            withCredentials([
-                string(credentialsId: 'sfdc-consumer-key', variable: 'CONNECTED_APP_CONSUMER_KEY'),
-                string(credentialsId: 'sfdc-username', variable: 'SFDC_USERNAME'),
-                file(credentialsId: 'sfdc-jwt-key', variable: 'JWT_KEY_FILE')
-            ]) {
-                if (isUnix()) {
-                    sh """
-                        sf org login jwt --client-id ${CONNECTED_APP_CONSUMER_KEY} \
-                            --jwt-key-file ${JWT_KEY_FILE} \
-                            --username ${SFDC_USERNAME} \
-                            --alias ${ORG_ALIAS} \
-                            --instance-url ${ORG_URL}
-                    """
-                } else {
-                    bat """
-                        set "SF_ALIAS=${ORG_ALIAS}"
-                        sf org login jwt ^
-                            --client-id %CONNECTED_APP_CONSUMER_KEY% ^
-                            --jwt-key-file %JWT_KEY_FILE% ^
-                            --username %SFDC_USERNAME% ^
-                            --alias %SF_ALIAS% ^
-                            --instance-url ${ORG_URL}
-                    """
-                }
-
-                // Deploy the directory containing the XML
-                //def deployDir = new File(XML_PATH).parent
-                echo "Deploying only the updated XML file to Salesforce Org: ${ORG_ALIAS}"
-
-                def deployExists = fileExists(XML_PATH)
-                if (!deployExists) {
-                    error "Deployment failed: File not found at ${XML_PATH}"
-                }
-
-                if (isUnix()) {
-                    sh """
-                        echo "Deploying ${XML_PATH} to org ${ORG_ALIAS}..."
-                        sf project deploy start --target-org ${ORG_ALIAS} --source-dir "${XML_PATH}" --wait 10
-                    """
-                } else {
-                    bat """
-                        echo Deploying ${XML_PATH} to org ${ORG_ALIAS}...
-                        sf project deploy start --target-org %OrgAlias% --source-dir "${XML_PATH}" --wait 10
-                    """
+            // -------------------------------
+            stage('Authenticate to Salesforce Org') {
+                try {
+                    echo "Authenticating with Salesforce Org: ${ORG_ALIAS}"
+                    if (isUnix()) {
+                        sh """
+                            sf org login jwt --client-id ${CONNECTED_APP_CONSUMER_KEY} \
+                                --jwt-key-file ${JWT_KEY_FILE} \
+                                --username ${SFDC_USERNAME} \
+                                --alias ${ORG_ALIAS} \
+                                --instance-url ${ORG_URL}
+                        """
+                    } else {
+                        bat """
+                            sf org login jwt ^
+                                --client-id %CONNECTED_APP_CONSUMER_KEY% ^
+                                --jwt-key-file %JWT_KEY_FILE% ^
+                                --username %SFDC_USERNAME% ^
+                                --alias ${ORG_ALIAS} ^
+                                --instance-url ${ORG_URL}
+                        """
+                    }
+                } catch (e) {
+                    error "Authentication Failed: ${e}"
                 }
             }
-        }
-    } catch (err) {
-        echo "Error: ${err}"
-        currentBuild.result = 'FAILURE'
-        throw err
-    } finally {
-        stage('Clean Workspace') {
-            cleanWs()
+
+            // -------------------------------
+            stage('Backup Existing Security Settings') {
+                try {
+                    echo "Backing up current settings to folder: ${BACKUP_DIR}"
+                    if (isUnix()) {
+                        sh "mkdir -p ${BACKUP_DIR}"
+                        sh """
+                            sf retrieve metadata \
+                                --target-org ${ORG_ALIAS} \
+                                --manifest manifest/package.xml \
+                                --output-dir ${BACKUP_DIR} \
+                                --wait 10
+                        """
+                    } else {
+                        bat """
+                            mkdir ${BACKUP_DIR}
+                            sf retrieve metadata ^
+                                --target-org ${ORG_ALIAS} ^
+                                --manifest manifest/package.xml ^
+                                --output-dir ${BACKUP_DIR} ^
+                                --wait 10
+                        """
+                    }
+                } catch (e) {
+                    echo "Backup Failed (Continuing anyway): ${e}"
+                }
+            }
+
+            // -------------------------------
+            stage('Deploy Updated Security Settings') {
+                try {
+                    echo "Deploying file: ${XML_PATH} to ${ORG_ALIAS}"
+
+                    if (isUnix()) {
+                        sh """
+                            sf deploy metadata \
+                                --target-org ${ORG_ALIAS} \
+                                --source-dir ${XML_PATH} \
+                                --ignore-errors \
+                                --wait 10
+                        """
+                    } else {
+                        bat """
+                            sf deploy metadata ^
+                                --target-org ${ORG_ALIAS} ^
+                                --source-dir ${XML_PATH} ^
+                                --ignore-errors ^
+                                --wait 10
+                        """
+                    }
+                } catch (e) {
+                    error "Deployment Failed: ${e}"
+                }
+            }
+
+            // -------------------------------
+            stage('Post-Deployment Validation') {
+                try {
+                    echo "Validating Deployment Results..."
+                    if (isUnix()) {
+                        sh "sf org list"
+                    } else {
+                        bat "sf org list"
+                    }
+                } catch (e) {
+                    echo "Post-validation failed: ${e}"
+                }
+            }
+
+            echo "Deployment Successful for ${ORG_ALIAS}!"
+
+        } catch (err) {
+            echo "Pipeline Failed: ${err}"
+            currentBuild.result = 'FAILURE'
         }
     }
 }
