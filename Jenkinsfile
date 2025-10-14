@@ -48,7 +48,7 @@ node {
             stage('Checkout Code from GitHub') {
                 try {
                     echo "Checking out branch: ${BRANCH_NAME}"
-                    git branch: "${BRANCH_NAME}", url: 'https://github.com/your-org/sfSecuritySettingsRepo.git'
+                    git branch: "${BRANCH_NAME}", url: 'https://github.com/madhus-git/sfSecuritySettingsUpdate.git'
                 } catch (e) {
                     error "Git Checkout Failed: ${e}"
                 }
