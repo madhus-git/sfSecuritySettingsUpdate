@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <EventSettings xmlns="http://soap.sforce.com/2006/04/metadata">
     <enableDeleteMonitoringData>false</enableDeleteMonitoringData>
-    <enableTransactionSecurityPolicies>true</enableTransactionSecurityPolicies>
+    <enableDynamicStreamingChannel>true</enableDynamicStreamingChannel>
     <enableEventLogGeneration>true</enableEventLogGeneration>
-    <eventLogRetentionDuration>365</eventLogRetentionDuration>
+    <enableEventLogWaveIntegration>false</enableEventLogWaveIntegration>
+    <enableStreamingApi>true</enableStreamingApi>
+    <eventLogRetentionDuration>0</eventLogRetentionDuration>
 </EventSettings>

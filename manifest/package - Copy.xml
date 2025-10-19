@@ -28,5 +28,5 @@
         <members>*</members>
         <name>RemoteSiteSetting</name>
     </types>
-    <version>65.0</version>
+    <version>64.0</version>
 </Package>

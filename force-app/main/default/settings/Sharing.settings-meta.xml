@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <SharingSettings xmlns="http://soap.sforce.com/2006/04/metadata">
-    <enableCommunityUserVisibility>false</enableCommunityUserVisibility>
-    <enableManagerGroups>false</enableManagerGroups>
-    <enablePartnerSuperUserAccess>false</enablePartnerSuperUserAccess>
-    <enablePortalUserCaseSharing>false</enablePortalUserCaseSharing>
-    <enablePortalUserVisibility>false</enablePortalUserVisibility>
-    <enableExternalSharingModel>true</enableExternalSharingModel>
-    <enableRestrictAccessLookupRecords>true</enableRestrictAccessLookupRecords>
-    <enableManualUserRecordSharing>false</enableManualUserRecordSharing>
+    <deferGroupMembership>false</deferGroupMembership>
+    <deferSharingRules>false</deferSharingRules>
     <enableAssetSharing>true</enableAssetSharing>
-    <enableStandardReportVisibility>false</enableStandardReportVisibility>
+    <enableCommunityUserVisibility>false</enableCommunityUserVisibility>
+    <enableExternalSharingModel>true</enableExternalSharingModel>
+    <enableManagerGroups>false</enableManagerGroups>
+    <enableManualUserRecordSharing>false</enableManualUserRecordSharing>
+    <enablePortalUserCaseSharing>true</enablePortalUserCaseSharing>
+    <enablePortalUserVisibility>false</enablePortalUserVisibility>
+    <enableRemoveTMGroupMembership>false</enableRemoveTMGroupMembership>
+    <enableRestrictAccessLookupRecords>true</enableRestrictAccessLookupRecords>
+    <enableSecureGuestAccess>false</enableSecureGuestAccess>
+    <enableStandardReportVisibility>true</enableStandardReportVisibility>
 </SharingSettings>
