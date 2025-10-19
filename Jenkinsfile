@@ -108,6 +108,7 @@ node {
                             --source-dir ${XML_PATH} \
                             --ignore-errors \
                             --ignore-warnings \
+                            --api-version 64.0 \
                             --wait 10 || echo "Deployment had warnings/errors but continued successfully."
                     """
                 } else {
