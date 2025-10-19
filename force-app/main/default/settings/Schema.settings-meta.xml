@@ -2,6 +2,6 @@
 <SchemaSettings xmlns="http://soap.sforce.com/2006/04/metadata">
     <enableAdvancedCMTSecurity>true</enableAdvancedCMTSecurity>
     <enableAdvancedCSSecurity>true</enableAdvancedCSSecurity>
-    <enableListCustomSettingCreation>false</enableListCustomSettingCreation>
+    <!-- <enableListCustomSettingCreation>false</enableListCustomSettingCreation> -->
     <enableSOSLOnCustomSettings>false</enableSOSLOnCustomSettings>
 </SchemaSettings>

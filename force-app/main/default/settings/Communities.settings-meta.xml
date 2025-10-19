@@ -1,20 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CommunitiesSettings xmlns="http://soap.sforce.com/2006/04/metadata">
     <enableCspNotesOnAccConPref>false</enableCspNotesOnAccConPref>
+    <enableGuestRecordReassignOrgPref>true</enableGuestRecordReassignOrgPref>
+    <enableOotbProfExtUserOpsEnable>false</enableOotbProfExtUserOpsEnable>
+    <enableCspContactVisibilityPref>false</enableCspContactVisibilityPref>
     <enableNetPortalUserReportOpts>false</enableNetPortalUserReportOpts>
     <enablePowerCustomerCaseStatus>false</enablePowerCustomerCaseStatus>
     <enableUnsupportedBrowserModalPref>true</enableUnsupportedBrowserModalPref>
-    <enableGuestRecordReassignOrgPref>true</enableGuestRecordReassignOrgPref>
-    <applyLoginPageTypeToEmbeddedLogin>false</applyLoginPageTypeToEmbeddedLogin>
-    <blockEmbeddedLoginUnknownURLRedirect>false</blockEmbeddedLoginUnknownURLRedirect>
-    <enableCspContactVisibilityPref>false</enableCspContactVisibilityPref>
-    <enableEnablePRM>false</enableEnablePRM>
     <enableExternalAccHierPref>false</enableExternalAccHierPref>
-    <enableGuestPermDisOptOutCruc>false</enableGuestPermDisOptOutCruc>
-    <enableGuestSecurityOptOutCruc>false</enableGuestSecurityOptOutCruc>
-    <enableInviteChatterGuestEnabled>true</enableInviteChatterGuestEnabled>
-    <enableNetworksEnabled>false</enableNetworksEnabled>
-    <enableOotbProfExtUserOpsEnable>false</enableOotbProfExtUserOpsEnable>
+    <enableEnablePRM>false</enableEnablePRM>
     <enablePRMAccRelPref>true</enablePRMAccRelPref>
-    <enableRelaxPartnerAccountFieldPref>false</enableRelaxPartnerAccountFieldPref>
 </CommunitiesSettings>
