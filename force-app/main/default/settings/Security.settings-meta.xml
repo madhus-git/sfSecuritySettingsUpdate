@@ -57,6 +57,6 @@
     </sessionSettings>
     <singleSignOnSettings>
         <enableForceDelegatedCallout>true</enableForceDelegatedCallout>
-        <isLoginWithSalesforceCredentialsDisabled>false</isLoginWithSalesforceCredentialsDisabled>
+        <isLoginWithSalesforceCredentialsDisabled>true</isLoginWithSalesforceCredentialsDisabled>
     </singleSignOnSettings>
 </SecuritySettings>
