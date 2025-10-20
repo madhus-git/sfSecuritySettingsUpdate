@@ -20,7 +20,13 @@
         <members>PermissionSet</members>
         <members>Encryption</members>
         <members>Identity</members>
-        <!-- <members>SiteSettings</members> -->
+        <members>SiteSettings</members>
+        <members>Activities</members>
+        <members>Forecasting</members>
+        <members>Mobile</members>
+        <members>Reports</members>
+        <members>Search</members>
+        <members>UserManagement</members>
         <name>Settings</name>
     </types>
 

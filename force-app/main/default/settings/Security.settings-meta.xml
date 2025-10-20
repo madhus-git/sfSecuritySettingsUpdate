@@ -3,13 +3,6 @@
     <canUsersGrantLoginAccess>false</canUsersGrantLoginAccess>
     <enableAdminLoginAsAnyUser>false</enableAdminLoginAsAnyUser>
     <enableAuditFieldsInactiveOwner>false</enableAuditFieldsInactiveOwner>
-    <enableAuraSecureEvalPref>true</enableAuraSecureEvalPref>
-    <enableCoepHeader>false</enableCoepHeader>
-    <enableCoopHeader>false</enableCoopHeader>
-    <enableCrossOrgRedirects>false</enableCrossOrgRedirects>
-    <enablePermissionsPolicy>true</enablePermissionsPolicy>
-    <enableRequireHttpsConnection>true</enableRequireHttpsConnection>
-    <networkAccess/>
     <passwordPolicies>
         <complexity>AlphaNumeric</complexity>
         <expiration>SixtyDays</expiration>
@@ -21,72 +14,49 @@
         <obscureSecretAnswer>true</obscureSecretAnswer>
         <questionRestriction>DoesNotContainPassword</questionRestriction>
     </passwordPolicies>
-    <redirectBlockModeEnabled>false</redirectBlockModeEnabled>
-    <sendCspForUncommonClients>false</sendCspForUncommonClients>
     <sessionSettings>
-        <allowUserAuthenticationByCertificate>false</allowUserAuthenticationByCertificate>
-        <allowUserCertBasedAuthenticationWithOcspValidation>false</allowUserCertBasedAuthenticationWithOcspValidation>
-        <auraBoxcarReductionPref>false</auraBoxcarReductionPref>
+        <skipSFAWhenMFADirectUILogin>true</skipSFAWhenMFADirectUILogin>
+        <identityConfirmationOnEmailChange>true</identityConfirmationOnEmailChange>
         <canConfirmEmailChangeInLightningCommunities>true</canConfirmEmailChangeInLightningCommunities>
         <canConfirmIdentityBySmsOnly>true</canConfirmIdentityBySmsOnly>
-        <disableTimeoutWarning>false</disableTimeoutWarning>
-        <enableBuiltInAuthenticator>true</enableBuiltInAuthenticator>
-        <enableCSPOnEmail>true</enableCSPOnEmail>
-        <enableCSRFOnGet>true</enableCSRFOnGet>
-        <enableCSRFOnPost>true</enableCSRFOnPost>
-        <enableCacheAndAutocomplete>false</enableCacheAndAutocomplete>
         <enableClickjackNonsetupSFDC>true</enableClickjackNonsetupSFDC>
         <enableClickjackNonsetupUser>true</enableClickjackNonsetupUser>
         <enableClickjackNonsetupUserHeaderless>true</enableClickjackNonsetupUserHeaderless>
         <enableClickjackSetup>true</enableClickjackSetup>
-        <enableCoepHeader>false</enableCoepHeader>
         <enableContentSniffingProtection>true</enableContentSniffingProtection>
-        <enableCoopHeader>false</enableCoopHeader>
-        <enableLightningLogin>false</enableLightningLogin>
-        <enableLightningLoginOnlyWithUserPerm>false</enableLightningLoginOnlyWithUserPerm>
-        <enableMFADirectUILoginOptIn>false</enableMFADirectUILoginOptIn>
-        <enableOauthCorsPolicy>true</enableOauthCorsPolicy>
-        <enablePermissionsPolicy>true</enablePermissionsPolicy>
+        <enableCSPOnEmail>true</enableCSPOnEmail>
+        <enableCSRFOnGet>true</enableCSRFOnGet>
+        <enableCSRFOnPost>true</enableCSRFOnPost>
         <enablePostForSessions>true</enablePostForSessions>
-        <enableSMSIdentity>true</enableSMSIdentity>
-        <enableU2F>true</enableU2F>
+        <enableXssProtection>true</enableXssProtection>
         <enforceIpRangesEveryRequest>true</enforceIpRangesEveryRequest>
-        <enforceUserDeviceRevoked>true</enforceUserDeviceRevoked>
         <forceLogoutOnSessionTimeout>true</forceLogoutOnSessionTimeout>
         <forceRelogin>true</forceRelogin>
-        <grantCameraAccess>TrustedUrls</grantCameraAccess>
-        <grantMicrophoneAccess>TrustedUrls</grantMicrophoneAccess>
-        <hasRetainedLoginHints>false</hasRetainedLoginHints>
-        <hasUserSwitching>true</hasUserSwitching>
-        <identityConfirmationOnEmailChange>true</identityConfirmationOnEmailChange>
-        <identityConfirmationOnTwoFactorRegistrationEnabled>true</identityConfirmationOnTwoFactorRegistrationEnabled>
-        <lockSessionsToDomain>true</lockSessionsToDomain>
-        <lockSessionsToIp>false</lockSessionsToIp>
         <lockerServiceCSP>true</lockerServiceCSP>
-        <lockerServiceNext>true</lockerServiceNext>
-        <lockerServiceNextControl>false</lockerServiceNextControl>
-        <lockerTrustedMode>false</lockerTrustedMode>
-        <redirectBlockModeEnabled>false</redirectBlockModeEnabled>
+        <lockSessionsToDomain>true</lockSessionsToDomain>
         <redirectionWarning>true</redirectionWarning>
         <referrerPolicy>true</referrerPolicy>
-        <referrerPolicyDirective>no-referrer</referrerPolicyDirective>
         <requireHttpOnly>true</requireHttpOnly>
-        <sendCspForUncommonClients>false</sendCspForUncommonClients>
         <sessionTimeout>ThirtyMinutes</sessionTimeout>
-        <sidToken3rdPartyAuraApp>false</sidToken3rdPartyAuraApp>
-        <skipSFAWhenMFADirectUILogin>true</skipSFAWhenMFADirectUILogin>
+        <enableCacheAndAutocomplete>false</enableCacheAndAutocomplete>
+        <enableSMSIdentity>true</enableSMSIdentity>
+        <enforceUserDeviceRevoked>true</enforceUserDeviceRevoked>
+        <hasRetainedLoginHints>false</hasRetainedLoginHints>
+        <enableOauthCorsPolicy>true</enableOauthCorsPolicy>
+        <identityConfirmationOnTwoFactorRegistrationEnabled>true</identityConfirmationOnTwoFactorRegistrationEnabled>
+        <lockSessionsToIp>false</lockSessionsToIp>
+        <enableBuiltInAuthenticator>true</enableBuiltInAuthenticator>
+        <enableLightningLogin>false</enableLightningLogin>
+        <enableLightningLoginOnlyWithUserPerm>false</enableLightningLoginOnlyWithUserPerm>
+        <enableU2F>true</enableU2F>
+        <hasUserSwitching>false</hasUserSwitching>        
         <terminateUserSessionsWhenAdminResetsPassword>true</terminateUserSessionsWhenAdminResetsPassword>
-        <untrustedRedirect>AlwaysAllowed</untrustedRedirect>
-        <useEAPIRateLimitForConnectAPI>false</useEAPIRateLimitForConnectAPI>
-        <useLocalStorageForLogoutUrl>false</useLocalStorageForLogoutUrl>
-        <welcomeEmailTemplateId>000000000000000</welcomeEmailTemplateId>
+        <lockerServiceNext>true</lockerServiceNext>
+        <referrerPolicyDirective>no-referrer</referrerPolicyDirective>
+        <enablePermissionsPolicy>true</enablePermissionsPolicy>
     </sessionSettings>
     <singleSignOnSettings>
-        <enableCaseInsensitiveFederationID>false</enableCaseInsensitiveFederationID>
         <enableForceDelegatedCallout>true</enableForceDelegatedCallout>
-        <enableMultipleSamlConfigs>true</enableMultipleSamlConfigs>
-        <enableSamlJitProvisioning>false</enableSamlJitProvisioning>
-        <enableSamlLogin>false</enableSamlLogin>
-        <isLoginWithSalesforceCredentialsDisabled>true</isLoginWithSalesforceCredentialsDisabled>
+        <isLoginWithSalesforceCredentialsDisabled>false</isLoginWithSalesforceCredentialsDisabled>
     </singleSignOnSettings>
 </SecuritySettings>
