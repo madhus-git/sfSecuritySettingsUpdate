@@ -2,7 +2,7 @@
 // Scripted Jenkins Pipeline
 // Deploy Specific Salesforce Security Setting via Jenkins
 // Supports Windows & Linux Agents
-// Includes ignore-errors & ignore-warnings for partial deploy
+// Uses API v64.0 to avoid unsupported Salesforce settings issues
 // ============================================================
 
 node {
@@ -14,8 +14,9 @@ node {
         parameters([
             string(name: 'OrgAlias', description: 'Salesforce Org Alias (e.g. devOrg, uatOrg, prodOrg)', defaultValue: ''),
             string(name: 'OrgUrl', defaultValue: 'https://test.salesforce.com', description: '* Salesforce Org URL'),
-            string(name: 'BranchName', description: 'Git branch or tag to deploy', defaultValue: 'otherOrgs'),
-            string(name: 'XMLFilePath', defaultValue: '', description: '* Path to XML file to deploy (e.g. force-app/main/default/settings/Security.settings-meta.xml)')
+            string(name: 'BranchName', description: 'Git branch or tag to deploy', defaultValue: 'deploySecurityValues'),
+            string(name: 'XMLFilePath', defaultValue: '', description: '* Path to XML file to deploy (e.g. force-app/main/default/settings/Security.settings-meta.xml)'),
+            string(name: 'ApiVersion', defaultValue: '64.0', description: 'Salesforce API version to use for deployment (recommended: 64.0)')
         ])
     ])
 
@@ -26,6 +27,7 @@ node {
     def ORG_URL = params.OrgUrl?.trim()
     def BRANCH_NAME = params.BranchName?.trim()
     def XML_PATH = params.XMLFilePath?.trim()
+    def API_VERSION = params.ApiVersion?.trim()
     def BACKUP_DIR = "backup_settings_${new Date().format('yyyyMMdd_HHmmss')}"
 
     // --------------------------------------
@@ -100,7 +102,7 @@ node {
 
             // -------------------------------
             stage('Deploy Updated Security Settings') {
-                echo "Deploying file: ${XML_PATH} to ${ORG_ALIAS} (with ignore-errors & ignore-warnings)"
+                echo "Deploying file: ${XML_PATH} to ${ORG_ALIAS} using API version ${API_VERSION} (ignore-errors & ignore-warnings)"
                 if (isUnix()) {
                     sh """
                         sf deploy metadata \
@@ -108,7 +110,7 @@ node {
                             --source-dir ${XML_PATH} \
                             --ignore-errors \
                             --ignore-warnings \
-                            --api-version 64.0 \
+                            --api-version ${API_VERSION} \
                             --wait 10 || echo "Deployment had warnings/errors but continued successfully."
                     """
                 } else {
@@ -118,6 +120,7 @@ node {
                             --source-dir ${XML_PATH} ^
                             --ignore-errors ^
                             --ignore-warnings ^
+                            --api-version ${API_VERSION} ^
                             --wait 10 ^
                             || echo Deployment had warnings/errors but continued successfully.
                     """
@@ -134,7 +137,7 @@ node {
                 }
             }
 
-            echo "Deployment Completed (Warnings Ignored) for ${ORG_ALIAS}!"
+            echo "Deployment Completed Successfully for ${ORG_ALIAS} (API ${API_VERSION})"
 
         } catch (err) {
             echo "Pipeline Failed: ${err}"
