@@ -68,77 +68,74 @@ node {
             }
 
             stage('Check for Failures') {
-    script {
-        echo "🔍 Checking for failed tags in deployment..."
+                script {
+                    echo "Checking for failed tags in deployment..."
 
-        def logContent = readFile(LOG_FILE)
-        def failedTags = []
+                    def logContent = readFile(LOG_FILE)
+                    def failedTags = []
 
-        // Match failed component names from JSON logs
-        def pattern = /"componentFailures"[\s\S]*?"fullName"\s*:\s*"([^"]+)"/
-        def lines = (logContent =~ pattern).collect { it[1] }
+                    // Match failed component names from JSON logs
+                    def pattern = /"componentFailures"[\s\S]*?"fullName"\s*:\s*"([^"]+)"/
+                    def lines = (logContent =~ pattern).collect { it[1] }
 
-        if (lines && lines.size() > 0) {
-            failedTags = lines.unique()
-            echo "⚠️ Components failed during deployment:"
-            failedTags.each { echo "   • ${it}" }
+                    if (lines && lines.size() > 0) {
+                        failedTags = lines.unique()
+                        echo "Components failed during deployment:"
+                        failedTags.each { echo "   • ${it}" }
 
-            // Read XML and remove failed tags
-            def xmlText = readFile(XML_FILE)
-            def removedTags = []
+                        // Read XML and remove failed tags
+                        def xmlText = readFile(XML_FILE)
+                        def removedTags = []
 
-            failedTags.each { tagName ->
-                def tagRegex = "(?s)<${tagName}>.*?</${tagName}>"
-                if (xmlText =~ tagRegex) {
-                    xmlText = xmlText.replaceAll(tagRegex, "")
-                    removedTags << tagName
-                }
-            }
+                        failedTags.each { tagName ->
+                            def tagRegex = "(?s)<${tagName}>.*?</${tagName}>"
+                            if (xmlText =~ tagRegex) {
+                                xmlText = xmlText.replaceAll(tagRegex, "")
+                                removedTags << tagName
+                            }
+                        }
 
-            if (removedTags) {
-                echo "🧹 Removed failed tags from XML:"
-                removedTags.each { echo "   - ${it}" }
+                    if (removedTags) {
+                        echo "Removed failed tags from XML:"
+                        removedTags.each { echo "   - ${it}" }
 
-                // Show cleaned XML content in console
-                echo "==============================================="
-                echo "🧾 Cleaned XML Content After Removal:"
-                echo "==============================================="
-                echo "${xmlText}"
-                echo "==============================================="
+                        // Show cleaned XML content in console
+                        echo "==============================================="
+                        echo "Cleaned XML Content After Removal:"
+                        echo "==============================================="
+                        echo "${xmlText}"
+                        echo "==============================================="
 
-                // Overwrite the XML file with cleaned content
-                writeFile file: XML_FILE, text: xmlText
-                echo "✅ Cleaned XML saved to: ${XML_FILE}"
+                        // Overwrite the XML file with cleaned content
+                        writeFile file: XML_FILE, text: xmlText
+                        echo "Cleaned XML saved to: ${XML_FILE}"
 
-                // Redeploy only successful tags
-                echo "♻️ Redeploying remaining successful components..."
-                def redeployCmd = isUnix() ?
-                    "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || true" :
-                    "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || exit /b 0"
+                        // Redeploy only successful tags
+                        echo "Redeploying remaining successful components..."
+                        def redeployCmd = isUnix() ?
+                        "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || true" :
+                        "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || exit /b 0"
 
-                if (isUnix()) {
-                    sh redeployCmd
+                        if (isUnix()) {
+                            sh redeployCmd
+                        } else {
+                            bat redeployCmd
+                        }
+
+                        echo "Redeployment complete with successful tags only."
+                        currentBuild.result = 'UNSTABLE'
+                    } else {
+                        echo "No removable failed tags found in XML. Nothing modified."
+                    }
                 } else {
-                    bat redeployCmd
+                    echo "All components deployed successfully! No failed tags found."
                 }
-
-                echo "✅ Redeployment complete with successful tags only."
-                currentBuild.result = 'UNSTABLE'
-            } else {
-                echo "No removable failed tags found in XML. Nothing modified."
             }
-
-        } else {
-            echo "✅ All components deployed successfully! No failed tags found."
         }
+
+    } catch (e) {
+        echo "Pipeline error: ${e}"
+        currentBuild.result = 'FAILURE'
     }
-}
-
-
-
-        } catch (e) {
-            echo "Pipeline error: ${e}"
-            currentBuild.result = 'FAILURE'
-        }
     }
 }
