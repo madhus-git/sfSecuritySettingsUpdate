@@ -68,51 +68,44 @@ node {
             }
 
             stage('Check for Failures') {
-                echo "Checking for failed tags in deployment..."
-                def logContent = readFile(LOG_FILE)
-                def failedTags = []
+    echo "Checking for failed tags in deployment..."
 
-                // Match failed component names from the log
-                logContent.eachLine { line ->
-                    if (line.contains('"componentFailures"')) {
-                        failedTags << line
-                    }
-                }
+    def logContent = readFile(LOG_FILE)
+    def failedTags = []
 
-                if (failedTags) {
-                    echo "Some components failed during deployment:"
-                    failedTags.each { echo it }
+    // Use standard Groovy regex instead of eachLine (sandbox-safe)
+    def matcher = logContent =~ /"componentFailures"[\s\S]*?"fullName"\s*:\s*"([^"]+)"/
 
-                    // Parse XML and remove failed tags
-                    echo "Removing failed tags from XML before redeployment..."
-                    def xmlText = readFile(XML_FILE)
+    while (matcher.find()) {
+        failedTags << matcher.group(1)
+    }
 
-                    failedTags.each { tagLine ->
-                        def tagMatcher = tagLine =~ /"fullName"\s*:\s*"([^"]+)"/
-                        if (tagMatcher) {
-                            def tagName = tagMatcher[0][1]
-                            xmlText = xmlText.replaceAll("(?s)<${tagName}>.*?</${tagName}>", "")
-                            echo "Removed failed tag: ${tagName}"
-                        }
-                    }
+    if (failedTags) {
+        echo "Some components failed during deployment:"
+        failedTags.each { echo "   • ${it}" }
 
-                    // Write cleaned XML
-                    writeFile file: XML_FILE, text: xmlText
+        // Clean XML by removing failed tags
+        def xmlText = readFile(XML_FILE)
+        failedTags.each { tagName ->
+            xmlText = xmlText.replaceAll("(?s)<${tagName}>.*?</${tagName}>", "")
+            echo "Removed failed tag: ${tagName}"
+        }
 
-                    // Redeploy without failed tags
-                    echo "Redeploying remaining content..."
-                    def redeployCmd = isUnix() ?
-                        "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || true" :
-                        "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || exit /b 0"
+        writeFile file: XML_FILE, text: xmlText
 
-                    if (isUnix()) sh redeployCmd else bat redeployCmd
+        echo "Redeploying remaining content..."
+        def redeployCmd = isUnix() ?
+            "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || true" :
+            "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || exit /b 0"
 
-                    currentBuild.result = 'UNSTABLE'
-                    echo "Deployment completed (skipped failed tags). Manual review recommended."
-                } else {
-                    echo "All tags deployed successfully!"
-                }
-            }
+        if (isUnix()) sh redeployCmd else bat redeployCmd
+
+        currentBuild.result = 'UNSTABLE'
+        echo "Deployment completed (skipped failed tags). Manual review recommended."
+    } else {
+        echo "All tags deployed successfully!"
+    }
+}
 
         } catch (e) {
             echo "Pipeline error: ${e}"
