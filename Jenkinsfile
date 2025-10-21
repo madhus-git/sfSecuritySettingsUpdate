@@ -73,6 +73,8 @@ node {
 
         def logContent = readFile(LOG_FILE)
         def failedTags = []
+        def summaryFile = "deployment_summary.txt"
+        def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
 
         // Extract failed component names directly (no matcher objects persist)
         def pattern = /"componentFailures"[\s\S]*?"fullName"\s*:\s*"([^"]+)"/
@@ -91,8 +93,42 @@ node {
                 echo "Removed failed tag: ${tagName}"
             }
 
-            writeFile file: XML_FILE, text: xmlText
+            // Print cleaned XML in Jenkins console
+            echo "==============================================="
+            echo "Cleaned XML after removing failed tags:"
+            echo "==============================================="
+            echo "${xmlText}"
+            echo "==============================================="
 
+            // Write updated XML file
+            writeFile file: XML_FILE, text: xmlText
+            echo "Updated XML written to: ${XML_FILE}"
+
+            // Generate deployment summary report
+            def summaryText = """\
+==============================
+Salesforce Deployment Summary
+==============================
+Timestamp     : ${timestamp}
+Org Alias     : ${ORG_ALIAS}
+Org URL       : ${ORG_URL}
+XML File      : ${XML_FILE}
+API Version   : ${API_VER}
+
+Failed Tags:
+${failedTags.collect { "   • ${it}" }.join('\n')}
+
+Cleaned XML Content:
+----------------------------------------------
+${xmlText}
+----------------------------------------------
+
+Status: UNSTABLE (Skipped failed tags; manual review required)
+"""
+            writeFile file: summaryFile, text: summaryText
+            echo "Deployment summary saved to ${summaryFile}"
+
+            // Redeploy remaining components
             echo "Redeploying remaining content..."
             def redeployCmd = isUnix() ?
                 "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || true" :
@@ -104,14 +140,42 @@ node {
                 bat redeployCmd
             }
 
+            // Archive summary for Jenkins UI
+            archiveArtifacts artifacts: summaryFile, fingerprint: true
+
             currentBuild.result = 'UNSTABLE'
             echo "Deployment completed (skipped failed tags). Manual review recommended."
 
         } else {
             echo "All tags deployed successfully!"
+
+            def xmlText = readFile(XML_FILE)
+            def summaryText = """\
+==============================
+Salesforce Deployment Summary
+==============================
+Timestamp     : ${timestamp}
+Org Alias     : ${ORG_ALIAS}
+Org URL       : ${ORG_URL}
+XML File      : ${XML_FILE}
+API Version   : ${API_VER}
+
+All tags deployed successfully!
+
+Cleaned XML Content:
+----------------------------------------------
+${xmlText}
+----------------------------------------------
+
+Status: SUCCESS
+"""
+            writeFile file: summaryFile, text: summaryText
+            archiveArtifacts artifacts: summaryFile, fingerprint: true
+            echo "Deployment summary saved to ${summaryFile}"
         }
     }
 }
+
 
         } catch (e) {
             echo "Pipeline error: ${e}"
