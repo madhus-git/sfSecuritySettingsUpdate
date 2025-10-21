@@ -68,42 +68,48 @@ node {
             }
 
             stage('Check for Failures') {
-    echo "Checking for failed tags in deployment..."
+    script {
+        echo "Checking for failed tags in deployment..."
 
-    def logContent = readFile(LOG_FILE)
-    def failedTags = []
+        def logContent = readFile(LOG_FILE)
+        def failedTags = []
 
-    // Use standard Groovy regex instead of eachLine (sandbox-safe)
-    def matcher = logContent =~ /"componentFailures"[\s\S]*?"fullName"\s*:\s*"([^"]+)"/
+        // Extract failed component names directly (no matcher objects persist)
+        def pattern = /"componentFailures"[\s\S]*?"fullName"\s*:\s*"([^"]+)"/
+        def lines = (logContent =~ pattern).collect { it[1] }
 
-    while (matcher.find()) {
-        failedTags << matcher.group(1)
-    }
+        if (lines && lines.size() > 0) {
+            failedTags = lines.unique()
+            echo "Some components failed during deployment:"
+            failedTags.each { echo "   • ${it}" }
 
-    if (failedTags) {
-        echo "Some components failed during deployment:"
-        failedTags.each { echo "   • ${it}" }
+            // Clean up XML file by removing failed tags
+            def xmlText = readFile(XML_FILE)
+            failedTags.each { tagName ->
+                def tagRegex = "(?s)<${tagName}>.*?</${tagName}>"
+                xmlText = xmlText.replaceAll(tagRegex, "")
+                echo "Removed failed tag: ${tagName}"
+            }
 
-        // Clean XML by removing failed tags
-        def xmlText = readFile(XML_FILE)
-        failedTags.each { tagName ->
-            xmlText = xmlText.replaceAll("(?s)<${tagName}>.*?</${tagName}>", "")
-            echo "Removed failed tag: ${tagName}"
+            writeFile file: XML_FILE, text: xmlText
+
+            echo "Redeploying remaining content..."
+            def redeployCmd = isUnix() ?
+                "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || true" :
+                "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || exit /b 0"
+
+            if (isUnix()) {
+                sh redeployCmd
+            } else {
+                bat redeployCmd
+            }
+
+            currentBuild.result = 'UNSTABLE'
+            echo "Deployment completed (skipped failed tags). Manual review recommended."
+
+        } else {
+            echo "All tags deployed successfully!"
         }
-
-        writeFile file: XML_FILE, text: xmlText
-
-        echo "Redeploying remaining content..."
-        def redeployCmd = isUnix() ?
-            "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || true" :
-            "sf deploy metadata --target-org ${ORG_ALIAS} --source-dir ${XML_FILE} --ignore-errors --ignore-warnings --api-version ${API_VER} --wait 10 || exit /b 0"
-
-        if (isUnix()) sh redeployCmd else bat redeployCmd
-
-        currentBuild.result = 'UNSTABLE'
-        echo "Deployment completed (skipped failed tags). Manual review recommended."
-    } else {
-        echo "All tags deployed successfully!"
     }
 }
 
